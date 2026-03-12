@@ -47,11 +47,23 @@ services:
     volumes:
       - metabase_data:/metabase-data
 
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.web"]
+    environment:
+      METABASE_SECRET_KEY: ${METABASE_SECRET_KEY:?Set METABASE_SECRET_KEY in .env}
+      METABASE_DASHBOARD_ID: ${METABASE_DASHBOARD_ID:-3}
+      METABASE_URL: https://hoteldash.ru/metabase
+    env_file:
+      - .env
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     depends_on:
       - metabase
+      - web
     ports:
       - "80:80"
       - "443:443"
