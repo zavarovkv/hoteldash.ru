@@ -7,7 +7,7 @@ hotels:
       yandex_travel:
         url_template: "https://travel.yandex.ru/hotels/moscow/hotel-metropol--123/?checkinDate={checkin}&checkoutDate={checkout}&adults=2"
       ostrovok:
-        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid_metropol/?dates={checkin_dot}-{checkout_dot}&guests=2"
+        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7595994/metropol_hotel/?dates={checkin_dot}-{checkout_dot}&guests=2&search=yes"
       tbank:
         url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/metropol/?checkIn={checkin}&checkOut={checkout}&adults=2"
       onetwotrip:
