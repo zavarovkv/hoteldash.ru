@@ -1,57 +1,81 @@
 # HotelDash.ru
 
-Сервис мониторинга цен на отели. Ежедневно парсит цены с 5 OTA (Яндекс Путешествия, Островок, Авито, Т-Банк, OneTwoTrip), находит самый дешёвый тариф и сохраняет в PostgreSQL.
+Hotel price monitoring service. Scrapes prices daily from 5 OTAs (Yandex Travel, Ostrovok, Avito, T-Bank, OneTwoTrip), finds the cheapest rate and saves it to PostgreSQL.
 
-**Стек:** Python + Playwright + PostgreSQL
+**Stack:** Python + Playwright + PostgreSQL + Docker
 
-## Установка
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-```
-
-Скопируйте `.env.example` в `.env` и заполните параметры подключения к БД:
+## Quick Start (Docker)
 
 ```bash
 cp .env.example .env
+# Edit .env — set POSTGRES_PASSWORD
+
+docker compose up -d db
+docker compose build app
+docker compose run --rm app python scripts/init_db.py
 ```
 
-## Инициализация БД
+## Server Setup
+
+One-command bootstrap for a fresh VPS:
 
 ```bash
-python scripts/init_db.py
+ssh your-server 'bash -s' < scripts/setup_server.sh
 ```
 
-## Запуск
+Installs Docker, clones the repo, starts PostgreSQL, builds the app image, creates DB tables, and sets up a daily cron job.
 
-Полный запуск всех отелей и источников:
+## Usage
+
+Full scraping run (all hotels, all sources, all dates):
 
 ```bash
-python -m src.main
+docker compose run --rm app
 ```
 
-Тестовый запуск одного парсера:
+Test a single parser:
 
 ```bash
-python scripts/run_once.py --hotel metropol-moscow --source ostrovok --checkin 2026-03-20
+docker compose run --rm app python scripts/run_once.py \
+  --hotel metropol-moscow --source ostrovok --checkin 2026-03-20
 ```
+
+## Configuration
+
+Hotels and URL templates are configured in `config/hotels.yaml`.
+
+Schedule parameters (`checkin_offsets_days`, `nights`, `adults`) are also in `hotels.yaml` and automatically substituted into URL templates via `{checkin}`, `{checkout}`, `{adults}`, `{nights}` placeholders.
 
 ## Cron
 
-```bash
-# Ежедневно в 06:00 МСК (03:00 UTC)
-0 3 * * * /path/to/hoteldash.ru/cron/hoteldash_cron.sh
+The setup script configures a daily cron job at 03:00 UTC (06:00 MSK):
+
+```
+0 3 * * * ~/hoteldash.ru/cron/hoteldash_cron.sh >> ~/hoteldash.ru/logs/cron.log 2>&1
 ```
 
-## Тесты
+## Deploy
+
+Auto-deploy via GitHub Actions on push to `master`. Requires repository secrets:
+
+- `SSH_HOST` — server IP
+- `SSH_USERNAME` — SSH user
+- `SSH_PRIVATE_KEY` — private key for SSH access
+
+## Tests
 
 ```bash
-python -m pytest tests/
+python -m unittest discover tests/
 ```
 
-## Конфигурация отелей
+## Project Structure
 
-Отели и URL-шаблоны настраиваются в `config/hotels.yaml`.
+```
+config/hotels.yaml      — hotel list with OTA URLs
+config/settings.py      — timeouts, delays, retries
+src/main.py             — orchestration
+src/parsers/            — OTA parsers (Ostrovok, TBank, OneTwoTrip, Yandex, Avito)
+src/utils/browser.py    — Playwright with anti-detect
+src/utils/antibot.py    — delays, UA rotation
+src/utils/notifications.py — Telegram alerts (optional)
+```
