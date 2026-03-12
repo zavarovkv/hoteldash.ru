@@ -1,28 +1,16 @@
 #!/bin/bash
-# HotelDash — обёртка для crontab
-# Использование в crontab:
-# 0 3 * * * /path/to/hoteldash.ru/cron/hoteldash_cron.sh
+# HotelDash — ежедневный запуск парсера через cron
+# 0 3 * * * /home/zavarov888/hoteldash.ru/cron/hoteldash_cron.sh >> /home/zavarov888/hoteldash.ru/logs/cron.log 2>&1
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_FILE="$PROJECT_DIR/hoteldash_$(date +%Y%m%d_%H%M%S).log"
-
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# Активируем виртуальное окружение если есть
-if [ -f "$PROJECT_DIR/.venv/bin/activate" ]; then
-    source "$PROJECT_DIR/.venv/bin/activate"
-elif [ -f "$PROJECT_DIR/venv/bin/activate" ]; then
-    source "$PROJECT_DIR/venv/bin/activate"
-fi
+mkdir -p logs
 
-echo "=== HotelDash запуск: $(date) ===" >> "$LOG_FILE"
+echo "=== $(date) — Запуск ==="
 
-python -m src.main >> "$LOG_FILE" 2>&1
-EXIT_CODE=$?
+docker compose run --rm app
 
-echo "=== HotelDash завершён: $(date), код: $EXIT_CODE ===" >> "$LOG_FILE"
-
-exit $EXIT_CODE
+echo "=== $(date) — Завершён ==="

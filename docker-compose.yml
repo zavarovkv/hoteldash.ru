@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hoteldash
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoteldash_secret}
+      POSTGRES_DB: hoteldash
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hoteldash"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://hoteldash:${POSTGRES_PASSWORD:-hoteldash_secret}@db:5432/hoteldash
+    env_file:
+      - .env
+    volumes:
+      - ./screenshots:/app/screenshots
+      - ./config/hotels.yaml:/app/config/hotels.yaml:ro
+
+volumes:
+  pgdata:

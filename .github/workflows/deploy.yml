@@ -16,24 +16,18 @@ jobs:
           username: zavarov888
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             cd ~/hoteldash.ru
 
-            # Забираем свежий код
             git pull origin master
 
-            # Активируем venv, создаём если нет
-            if [ ! -d ".venv" ]; then
-              python3 -m venv .venv
-            fi
-            source .venv/bin/activate
+            # Пересобираем образ приложения
+            docker compose build --quiet app
 
-            # Зависимости
-            pip install -r requirements.txt --quiet
+            # БД — всегда поднята
+            docker compose up -d db
 
-            # Playwright-браузер (только если ещё нет)
-            playwright install chromium --with-deps 2>/dev/null || true
+            # Миграция
+            docker compose run --rm app python scripts/init_db.py
 
-            # Миграция БД (создаёт таблицы если не существуют)
-            python scripts/init_db.py
-
-            echo "Deploy complete: $(date)"
+            echo "✅ Deploy complete: $(date)"

@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.example
+.venv
+venv
+screenshots
+logs
+tests
+cron
+*.md
+*.log
+.gitignore
+.dockerignore
