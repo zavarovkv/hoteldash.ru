@@ -24,8 +24,8 @@ jobs:
             # Пересобираем образ приложения
             docker compose build --quiet app
 
-            # БД — всегда поднята
-            docker compose up -d db
+            # БД + Metabase + nginx — всегда подняты
+            docker compose up -d db metabase nginx
 
             # Миграция
             docker compose run --rm app python scripts/init_db.py

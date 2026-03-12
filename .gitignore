@@ -6,6 +6,7 @@ __pycache__/
 venv/
 screenshots/
 logs/
+nginx/certbot/
 *.log
 .idea/
 .vscode/

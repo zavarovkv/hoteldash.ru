@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: hoteldash
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/init_metabase_db.sh:/docker-entrypoint-initdb.d/init_metabase_db.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hoteldash"]
       interval: 5s
@@ -27,5 +28,45 @@ services:
       - ./screenshots:/app/screenshots
       - ./config/hotels.yaml:/app/config/hotels.yaml:ro
 
+  metabase:
+    image: metabase/metabase:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: hoteldash
+      MB_DB_PASS: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      MB_DB_HOST: db
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - metabase
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'''
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
 volumes:
   pgdata:
+  metabase_data:
