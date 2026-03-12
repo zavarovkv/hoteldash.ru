@@ -85,6 +85,7 @@ async def run_scraping(
         checkin_dates = get_checkin_dates(config.schedule.checkin_offsets_days)
 
     nights = config.schedule.nights
+    adults = config.schedule.adults
 
     # Рандомизируем порядок
     hotels = shuffle_items(hotels)
@@ -124,7 +125,7 @@ async def run_scraping(
                         total_tasks += 1
 
                         if source_config.has_dates:
-                            url = build_url(source_config.url_template, checkin, checkout)
+                            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
                         else:
                             url = source_config.url_template
 

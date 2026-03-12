@@ -71,6 +71,11 @@ class TestConfigLoader(unittest.TestCase):
         url = build_url(template, date(2026, 3, 20), date(2026, 3, 21))
         self.assertEqual(url, "https://example.com/?dates=20.03.2026-21.03.2026")
 
+    def test_build_url_with_adults_and_nights(self):
+        template = "https://example.com/?checkin={checkin}&checkout={checkout}&adults={adults}&nights={nights}"
+        url = build_url(template, date(2026, 3, 20), date(2026, 3, 21), nights=3, adults=2)
+        self.assertEqual(url, "https://example.com/?checkin=2026-03-20&checkout=2026-03-21&adults=2&nights=3")
+
     def test_get_checkin_dates(self):
         base = date(2026, 3, 13)
         dates = get_checkin_dates([1, 7], base)

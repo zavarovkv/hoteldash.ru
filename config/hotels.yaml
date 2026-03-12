@@ -5,13 +5,13 @@ hotels:
     stars: 5
     sources:
       yandex_travel:
-        url_template: "https://travel.yandex.ru/hotels/moscow/hotel-metropol--123/?checkinDate={checkin}&checkoutDate={checkout}&adults=2"
+        url_template: "https://travel.yandex.ru/hotels/moscow/hotel-metropol--123/?checkinDate={checkin}&checkoutDate={checkout}&adults={adults}"
       ostrovok:
-        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7595994/metropol_hotel/?dates={checkin_dot}-{checkout_dot}&guests=2&search=yes"
+        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7595994/metropol_hotel/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
       tbank:
-        url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/metropol/?checkIn={checkin}&checkOut={checkout}&adults=2"
+        url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/metropol/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
       onetwotrip:
-        url_template: "https://www.onetwotrip.com/ru/hotels/hotel/?checkIn={checkin}&checkOut={checkout}"
+        url_template: "https://www.onetwotrip.com/ru/hotels/hotel/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
       avito:
         url_template: "https://www.avito.ru/moskva/doma_otdykha/metropol-123456"
         has_dates: false
@@ -22,13 +22,13 @@ hotels:
     stars: 5
     sources:
       yandex_travel:
-        url_template: "https://travel.yandex.ru/hotels/moscow/hotel-national--456/?checkinDate={checkin}&checkoutDate={checkout}&adults=2"
+        url_template: "https://travel.yandex.ru/hotels/moscow/hotel-national--456/?checkinDate={checkin}&checkoutDate={checkout}&adults={adults}"
       ostrovok:
-        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid_national/?dates={checkin_dot}-{checkout_dot}&guests=2"
+        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid_national/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
       tbank:
-        url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/national/?checkIn={checkin}&checkOut={checkout}&adults=2"
+        url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/national/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
       onetwotrip:
-        url_template: "https://www.onetwotrip.com/ru/hotels/hotel/?checkIn={checkin}&checkOut={checkout}"
+        url_template: "https://www.onetwotrip.com/ru/hotels/hotel/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
       avito:
         url_template: "https://www.avito.ru/moskva/doma_otdykha/national-789012"
         has_dates: false

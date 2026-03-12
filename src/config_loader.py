@@ -80,13 +80,15 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     return AppConfig(hotels=hotels, schedule=schedule)
 
 
-def build_url(template: str, checkin: date, checkout: date) -> str:
-    """Подставляет даты в URL-шаблон."""
+def build_url(template: str, checkin: date, checkout: date, nights: int = 1, adults: int = 2) -> str:
+    """Подставляет даты и параметры в URL-шаблон."""
     return template.format(
         checkin=checkin.isoformat(),
         checkout=checkout.isoformat(),
         checkin_dot=checkin.strftime("%d.%m.%Y"),
         checkout_dot=checkout.strftime("%d.%m.%Y"),
+        nights=nights,
+        adults=adults,
     )
 
 
