@@ -10,7 +10,7 @@ from typing import Optional
 
 from src.config_loader import load_config, build_url, get_checkin_dates
 from src.db import get_session
-from src.models import Base, Hotel, Price, ScrapeRun
+from src.models import Hotel, Price, ScrapeRun
 from src.parsers.ostrovok import OstrovokParser
 from src.parsers.tbank import TbankParser
 from src.parsers.onetwotrip import OneTwoTripParser
@@ -90,84 +90,95 @@ async def run_scraping(
     # Рандомизируем порядок
     hotels = shuffle_items(hotels)
 
-    async with create_browser() as browser:
-        for hotel_config in hotels:
-            with get_session() as session:
-                hotel_id = ensure_hotel_in_db(session, hotel_config)
+    try:
+        async with create_browser() as browser:
+            for hotel_config in hotels:
+                with get_session() as session:
+                    hotel_id = ensure_hotel_in_db(session, hotel_config)
 
-            sources = hotel_config.sources
-            if source_filter:
-                sources = [s for s in sources if s.name == source_filter]
-                if not sources:
-                    logger.warning(
-                        "Источник '%s' не найден для отеля '%s'",
-                        source_filter, hotel_config.slug,
-                    )
-                    continue
-
-            # Рандомизируем порядок источников
-            sources = shuffle_items(sources)
-
-            for source_config in sources:
-                parser_class = PARSERS.get(source_config.name)
-                if not parser_class:
-                    logger.warning("Нет парсера для источника: %s", source_config.name)
-                    continue
-
-                parser = parser_class()
-                context = await create_context(browser)
-
-                try:
-                    page = await context.new_page()
-
-                    for checkin in checkin_dates:
-                        checkout = checkin + timedelta(days=nights)
-                        total_tasks += 1
-
-                        if source_config.has_dates:
-                            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
-                        else:
-                            url = source_config.url_template
-
-                        result = await parser.scrape(
-                            page, url, hotel_config.slug, checkin.isoformat()
+                sources = hotel_config.sources
+                if source_filter:
+                    sources = [s for s in sources if s.name == source_filter]
+                    if not sources:
+                        logger.warning(
+                            "Источник '%s' не найден для отеля '%s'",
+                            source_filter, hotel_config.slug,
                         )
+                        continue
 
-                        # Сохраняем результат
-                        with get_session() as session:
-                            price_record = Price(
-                                hotel_id=hotel_id,
-                                source=source_config.name,
-                                checkin_date=checkin,
-                                nights=nights,
-                                price=result.price,
-                                currency="RUB",
-                                raw_price_text=result.raw_text,
-                                error=result.error,
-                            )
-                            session.add(price_record)
+                # Рандомизируем порядок источников
+                sources = shuffle_items(sources)
 
-                        if result.price is not None:
-                            successful += 1
-                        else:
-                            failed += 1
+                for source_config in sources:
+                    parser_class = PARSERS.get(source_config.name)
+                    if not parser_class:
+                        logger.warning("Нет парсера для источника: %s", source_config.name)
+                        continue
 
-                        await delay_between_pages()
+                    parser = parser_class()
+                    context = await create_context(browser)
 
-                finally:
-                    await context.close()
+                    try:
+                        for checkin in checkin_dates:
+                            checkout = checkin + timedelta(days=nights)
+                            total_tasks += 1
 
-            await delay_between_hotels()
+                            # Новая страница для каждой даты — чистый стейт
+                            page = await context.new_page()
+                            try:
+                                if source_config.has_dates:
+                                    url = build_url(source_config.url_template, checkin, checkout, nights, adults)
+                                else:
+                                    url = source_config.url_template
 
-    # Обновляем scrape_run
-    with get_session() as session:
-        run = session.query(ScrapeRun).get(run_id)
-        if run:
-            run.finished_at = datetime.utcnow()
-            run.total_tasks = total_tasks
-            run.successful = successful
-            run.failed = failed
-            run.status = "completed"
+                                result = await parser.scrape(
+                                    page, url, hotel_config.slug, checkin.isoformat()
+                                )
+
+                                # Сохраняем результат
+                                with get_session() as session:
+                                    price_record = Price(
+                                        hotel_id=hotel_id,
+                                        source=source_config.name,
+                                        checkin_date=checkin,
+                                        nights=nights,
+                                        price=result.price,
+                                        currency="RUB",
+                                        raw_price_text=result.raw_text,
+                                        error=result.error,
+                                    )
+                                    session.add(price_record)
+
+                                if result.price is not None:
+                                    successful += 1
+                                else:
+                                    failed += 1
+                            finally:
+                                await page.close()
+
+                            await delay_between_pages()
+
+                    finally:
+                        await context.close()
+
+                await delay_between_hotels()
+
+        status = "completed"
+
+    except Exception:
+        status = "error"
+        raise
+
+    finally:
+        # Всегда обновляем scrape_run — даже при краше
+        with get_session() as session:
+            run = session.get(ScrapeRun, run_id)
+            if run:
+                run.finished_at = datetime.utcnow()
+                run.total_tasks = total_tasks
+                run.successful = successful
+                run.failed = failed
+                run.status = status
 
     logger.info(
         "Скрейпинг завершён: %d/%d успешно, %d ошибок",

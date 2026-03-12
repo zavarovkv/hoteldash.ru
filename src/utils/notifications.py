@@ -1,5 +1,6 @@
 """Telegram-уведомления (опционально)."""
 
+import html
 import os
 import logging
 import urllib.request
@@ -52,5 +53,5 @@ def notify_scrape_complete(successful: int, failed: int, total: int):
 
 def notify_error(error: str):
     """Уведомление о критической ошибке."""
-    text = f"🚨 <b>HotelDash — ошибка</b>\n<pre>{error[:500]}</pre>"
+    text = f"🚨 <b>HotelDash — ошибка</b>\n<pre>{html.escape(error[:500])}</pre>"
     send_telegram_message(text)

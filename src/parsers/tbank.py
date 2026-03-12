@@ -65,9 +65,13 @@ class TbankParser(BaseParser):
                 self._extract_prices_from_api(item, depth + 1)
 
     async def _extract_price(self, page: Page) -> ParseResult:
+        # Копируем и очищаем — чтобы ретраи не накапливали стейт
+        api_prices = self._api_prices.copy()
+        self._api_prices = []
+
         # Сначала проверяем перехваченные API-ответы
-        if self._api_prices:
-            min_price = min(self._api_prices)
+        if api_prices:
+            min_price = min(api_prices)
             return ParseResult(price=min_price, raw_text=str(min_price), error=None)
 
         # Ждём рендеринга React SPA

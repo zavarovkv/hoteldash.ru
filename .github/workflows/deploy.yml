@@ -12,8 +12,8 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: 130.193.40.81
-          username: zavarov888
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
@@ -30,4 +30,4 @@ jobs:
             # Миграция
             docker compose run --rm app python scripts/init_db.py
 
-            echo "✅ Deploy complete: $(date)"
+            echo "Deploy complete: $(date)"

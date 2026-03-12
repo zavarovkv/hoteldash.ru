@@ -49,16 +49,35 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     with open(config_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
+    if not raw or "hotels" not in raw:
+        raise ValueError("hotels.yaml must contain a 'hotels' key")
+
     hotels = []
-    for h in raw["hotels"]:
+    for i, h in enumerate(raw["hotels"]):
+        for required in ("slug", "name", "city"):
+            if required not in h:
+                raise ValueError(f"Hotel #{i} missing required field: {required}")
+        if not isinstance(h.get("sources", {}), dict):
+            raise ValueError(f"Hotel #{i} ({h['slug']}): 'sources' must be a mapping")
         sources = []
         for source_name, source_data in h.get("sources", {}).items():
+            if "url_template" not in source_data:
+                raise ValueError(f"Hotel '{h['slug']}', source '{source_name}': missing url_template")
+            url_template = source_data["url_template"]
+            has_dates = source_data.get("has_dates", True)
+            # Валидируем плейсхолдеры
+            if has_dates:
+                try:
+                    url_template.format(
+                        checkin="", checkout="", checkin_dot="", checkout_dot="",
+                        nights=0, adults=0,
+                    )
+                except KeyError as e:
+                    raise ValueError(
+                        f"Hotel '{h['slug']}', source '{source_name}': unknown placeholder {e}"
+                    )
             sources.append(
-                SourceConfig(
-                    name=source_name,
-                    url_template=source_data["url_template"],
-                    has_dates=source_data.get("has_dates", True),
-                )
+                SourceConfig(name=source_name, url_template=url_template, has_dates=has_dates)
             )
         hotels.append(
             HotelConfig(
