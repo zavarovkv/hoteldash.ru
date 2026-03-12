@@ -41,6 +41,7 @@ services:
       MB_DB_USER: hoteldash
       MB_DB_PASS: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       MB_DB_HOST: db
+      MB_SITE_URL: http://hoteldash.ru/metabase
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -56,6 +57,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/var/www/html:ro
       - ./nginx/certbot/conf:/etc/letsencrypt:ro
       - ./nginx/certbot/www:/var/www/certbot:ro
     command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'''
