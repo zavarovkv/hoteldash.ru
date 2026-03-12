@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: hoteldash
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoteldash_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: hoteldash
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -22,7 +22,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://hoteldash:${POSTGRES_PASSWORD:-hoteldash_secret}@db:5432/hoteldash
+      DATABASE_URL: postgresql://hoteldash:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/hoteldash
     env_file:
       - .env
     volumes:
