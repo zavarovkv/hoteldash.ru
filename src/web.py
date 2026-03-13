@@ -63,25 +63,73 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <metabase-dashboard token="{token}" with-title="true" with-downloads="true"></metabase-dashboard>
 
 <script>
-    // Hide "Powered by Metabase" badge inside Shadow DOM
-    (function hideBadge() {{
-        var el = document.querySelector('metabase-dashboard');
-        if (!el || !el.shadowRoot) {{
-            setTimeout(hideBadge, 500);
-            return;
+    // Hide "Powered by Metabase" badge everywhere
+    (function() {{
+        var css = 'a[href*="metabase.com"], [class*="PoweredBy"], [class*="powered-by"], [class*="EmbedFrame-Actionbuttons"] {{ display: none !important; }} iframe {{ height: 100vh !important; }}';
+
+        function injectStyle(root) {{
+            if (!root) return;
+            var s = document.createElement('style');
+            s.textContent = css;
+            root.appendChild(s);
         }}
-        var style = document.createElement('style');
-        style.textContent = 'a[href*="metabase.com"], [class*="PoweredBy"], [class*="powered-by"] {{ display: none !important; }}';
-        el.shadowRoot.appendChild(style);
-        // Re-check in case Metabase re-renders
-        setInterval(function() {{
-            if (!el.shadowRoot.querySelector('style[data-hide-badge]')) {{
-                var s = document.createElement('style');
-                s.setAttribute('data-hide-badge', '1');
-                s.textContent = style.textContent;
-                el.shadowRoot.appendChild(s);
+
+        function hideInNode(node) {{
+            // Hide any link to metabase.com
+            node.querySelectorAll('a[href*="metabase.com"], a[href*="metabase"], [class*="PoweredBy"], [class*="powered"]').forEach(function(el) {{
+                el.style.display = 'none';
+            }});
+            // Also hide by text content
+            node.querySelectorAll('a, span, div, p').forEach(function(el) {{
+                if (el.textContent && el.textContent.indexOf('Powered by Metabase') !== -1) {{
+                    el.style.display = 'none';
+                    if (el.parentElement) el.parentElement.style.display = 'none';
+                }}
+            }});
+        }}
+
+        function tryHide() {{
+            // 1. Main document
+            hideInNode(document);
+
+            // 2. Shadow DOM of metabase-dashboard
+            var mb = document.querySelector('metabase-dashboard');
+            if (mb && mb.shadowRoot) {{
+                injectStyle(mb.shadowRoot);
+                hideInNode(mb.shadowRoot);
+
+                // 3. iframe inside shadow DOM
+                var iframes = mb.shadowRoot.querySelectorAll('iframe');
+                iframes.forEach(function(iframe) {{
+                    try {{
+                        var doc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (doc) {{
+                            injectStyle(doc.head || doc.documentElement);
+                            hideInNode(doc);
+                        }}
+                    }} catch(e) {{}}
+                }});
+
+                // Watch for new elements in shadow DOM
+                new MutationObserver(function() {{
+                    hideInNode(mb.shadowRoot);
+                    mb.shadowRoot.querySelectorAll('iframe').forEach(function(iframe) {{
+                        try {{
+                            var doc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (doc) {{ injectStyle(doc.head || doc.documentElement); hideInNode(doc); }}
+                        }} catch(e) {{}}
+                    }});
+                }}).observe(mb.shadowRoot, {{ childList: true, subtree: true }});
             }}
-        }}, 2000);
+        }}
+
+        // Retry until shadow DOM is ready
+        var attempts = 0;
+        var timer = setInterval(function() {{
+            tryHide();
+            attempts++;
+            if (attempts > 60) clearInterval(timer);
+        }}, 1000);
     }})();
 </script>
 
