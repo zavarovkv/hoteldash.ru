@@ -21,8 +21,16 @@ class HotelSiteParser(BaseParser):
 
     async def _extract_price(self, page: Page) -> ParseResult:
         """Извлекает цену со страницы TravelLine booking engine."""
-        # Ждём загрузку результатов (Angular рендерит комнаты)
-        await page.wait_for_timeout(8000)
+        # Ждём загрузку результатов (Angular SPA рендерит комнаты)
+        # Пробуем дождаться появления элементов с ценами
+        try:
+            await page.wait_for_selector(
+                "[class*='price'], [class*='room'], [class*='rate'], [class*='accommodation']",
+                timeout=20000,
+            )
+        except Exception:
+            pass
+        await page.wait_for_timeout(5000)
 
         # Логируем что видим на странице
         body_text = await page.evaluate("() => document.body ? document.body.innerText.substring(0, 1000) : ''")
