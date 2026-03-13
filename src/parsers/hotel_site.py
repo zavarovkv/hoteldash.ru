@@ -151,14 +151,23 @@ class HotelSiteParser(BaseParser):
                     self.source_name, i, inp_type, inp_name, inp_class[:50], inp_placeholder,
                 )
 
-            # TravelLine date inputs
+            # TravelLine date inputs — field_1 (checkin), field_2 (checkout)
             date_inputs = await frame.query_selector_all(
+                "input[name='field_1'], input[name='field_2'], "
+                "input[class*='x-text-field__input'], "
                 "input[class*='date'], input[name*='date'], input[name*='Date'], "
-                "input[placeholder*='заезд'], input[placeholder*='выезд'], "
-                "input[placeholder*='Заезд'], input[placeholder*='Выезд'], "
-                "input[placeholder*='arrival'], input[placeholder*='departure'], "
-                "[class*='datepicker'] input, [class*='tl-datepicker'] input"
+                "input[placeholder*='заезд'], input[placeholder*='выезд']"
             )
+
+            # Дедупликация — берём уникальные элементы
+            seen = set()
+            unique_inputs = []
+            for inp in date_inputs:
+                name = await inp.get_attribute("name") or id(inp)
+                if name not in seen:
+                    seen.add(name)
+                    unique_inputs.append(inp)
+            date_inputs = unique_inputs
 
             if len(date_inputs) >= 2:
                 logger.info("[%s] Найдены date input'ы: %d", self.source_name, len(date_inputs))
