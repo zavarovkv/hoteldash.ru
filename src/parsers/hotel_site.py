@@ -28,22 +28,19 @@ class HotelSiteParser(BaseParser):
             pass
         await page.wait_for_timeout(5000)
 
-        # Нажимаем кнопку "Найти"
-        search_clicked = await page.evaluate("""() => {
-            var buttons = document.querySelectorAll('button');
-            for (var b of buttons) {
-                var text = b.innerText.trim().toLowerCase();
-                if (text === 'найти' || text === 'search' || text === 'find') {
-                    b.click();
-                    return true;
-                }
-            }
-            // Fallback: первая primary кнопка
-            var btn = document.querySelector('button.x-button--primary, button[type="submit"]');
-            if (btn) { btn.click(); return true; }
-            return false;
-        }""")
-        logger.info("[%s] Кнопка 'Найти' нажата: %s", self.source_name, search_clicked)
+        # Ждём появления кнопки "Найти" (Angular рендерит форму)
+        try:
+            search_btn = await page.wait_for_selector(
+                "button:has-text('Найти'), button:has-text('Search')",
+                timeout=30000,
+            )
+            if search_btn:
+                await search_btn.click()
+                logger.info("[%s] Кнопка 'Найти' нажата", self.source_name)
+            else:
+                logger.warning("[%s] Кнопка 'Найти' не найдена", self.source_name)
+        except Exception as e:
+            logger.warning("[%s] Ошибка при нажатии 'Найти': %s", self.source_name, e)
 
         # Ждём загрузку результатов после поиска
         await page.wait_for_timeout(10000)
