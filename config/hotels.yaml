@@ -17,8 +17,8 @@ hotels:
         url_template: "https://www.avito.ru/moskva/doma_otdykha/metropol-123456"
         has_dates: false
       hotel_site:
-        url_template: "https://metropol-moscow.ru/booking/"
-        has_dates: false
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=6315&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
+        has_dates: true
         widget: travelline
 
 
