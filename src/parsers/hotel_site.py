@@ -150,11 +150,11 @@ class HotelSiteParser(BaseParser):
             await target.wait_for_timeout(2000)
 
             # Логируем содержимое формы для отладки
-            form_html = await target.evaluate("""
+            form_html = await target.evaluate("""() => {
                 var form = document.querySelector('#tl-booking-form') ||
                            document.querySelector('[class*="tl-booking"]');
                 return form ? form.innerHTML.substring(0, 2000) : 'FORM NOT FOUND';
-            """)
+            }""")
             logger.info("[%s] Содержимое формы: %s", self.source_name, form_html[:500])
 
             # TravelLine использует input с определёнными классами
