@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date, timedelta
+from typing import Optional
 
-from playwright.async_api import Page
+from playwright.async_api import Page, Frame
 
 from src.parsers.base import BaseParser, ParseResult
 
@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 class HotelSiteParser(BaseParser):
     source_name = "hotel_site"
 
-    def __init__(self, widget: str | None = None):
+    def __init__(self, widget: Optional[str] = None):
         self.widget = widget  # 'travelline', 'bnovo', etc.
 
     async def scrape(self, page: Page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
-        """Переопределяем scrape — TravelLine требует взаимодействия с формой."""
+        """Переопределяем scrape — TravelLine загружает контент в iframe."""
         from config.settings import MAX_RETRIES, RETRY_DELAY, SAVE_SCREENSHOTS_ON_ERROR
 
         checkin = date.fromisoformat(checkin_date)
@@ -34,67 +34,41 @@ class HotelSiteParser(BaseParser):
                 )
 
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                await page.wait_for_timeout(8000)
+                await page.wait_for_timeout(10000)
 
-                # Ждём загрузку виджета бронирования
-                widget_selector = self._get_widget_selector()
-                try:
-                    tl_form = await page.wait_for_selector(widget_selector, timeout=30000)
-                    if tl_form:
-                        await tl_form.scroll_into_view_if_needed()
-                        await page.wait_for_timeout(2000)
-                except Exception:
-                    tl_form = None
+                # TravelLine грузит виджет внутрь iframe (tlFrame...)
+                tl_frame = await self._find_tl_frame(page)
 
-                if not tl_form:
-                    # Логируем что есть на странице для отладки
-                    iframes = await page.query_selector_all("iframe")
-                    logger.info("[%s] Найдено iframe: %d", self.source_name, len(iframes))
-                    for i, iframe in enumerate(iframes[:5]):
-                        src = await iframe.get_attribute("src") or "no-src"
-                        logger.info("[%s] iframe[%d] src=%s", self.source_name, i, src)
-
-                    forms = await page.query_selector_all("form, [id*='booking'], [class*='booking'], [id*='tl-'], [class*='tl-']")
-                    logger.info("[%s] Элементов booking/tl: %d", self.source_name, len(forms))
-                    for el in forms[:5]:
-                        tag = await el.evaluate("e => e.tagName + '#' + (e.id || '') + '.' + (e.className || '')")
-                        logger.info("[%s] элемент: %s", self.source_name, tag)
-
+                if not tl_frame:
+                    logger.warning("[%s] TravelLine iframe не найден", self.source_name)
                     await self._save_screenshot(page, hotel_slug, checkin_date)
-
                     if attempt < MAX_RETRIES:
                         await page.wait_for_timeout(RETRY_DELAY * 1000)
                         continue
-                    return ParseResult(
-                        price=None, raw_text=None,
-                        error=f"Widget not found (type={self.widget})",
-                    )
+                    return ParseResult(price=None, raw_text=None, error="TravelLine iframe not found")
 
-                # Проверяем — виджет в iframe или inline
-                iframe_selector = self._get_iframe_selector()
-                tl_iframe = await page.query_selector(iframe_selector) if iframe_selector else None
-                target = page
+                logger.info("[%s] TravelLine iframe найден, URL: %s", self.source_name, tl_frame.url[:200])
 
-                if tl_iframe:
-                    frame = await tl_iframe.content_frame()
-                    if frame:
-                        target = frame
-                        await target.wait_for_load_state("domcontentloaded")
-                        await target.wait_for_timeout(3000)
+                # Ждём загрузку контента iframe
+                await tl_frame.wait_for_load_state("domcontentloaded")
+                await page.wait_for_timeout(3000)
 
-                # Заполняем даты
-                filled = await self._fill_dates(target, checkin, checkout)
+                # Логируем содержимое iframe
+                frame_html = await tl_frame.evaluate("""() => {
+                    return document.body ? document.body.innerHTML.substring(0, 1000) : 'NO BODY';
+                }""")
+                logger.info("[%s] iframe содержимое: %s", self.source_name, frame_html[:500])
+
+                # Заполняем даты внутри iframe
+                filled = await self._fill_dates_in_frame(tl_frame, checkin, checkout)
                 if not filled:
-                    if attempt < MAX_RETRIES:
-                        await page.wait_for_timeout(RETRY_DELAY * 1000)
-                        continue
-                    return ParseResult(price=None, raw_text=None, error="failed to fill dates")
+                    # Даже без заполнения дат — TravelLine может показать цены по умолчанию
+                    logger.info("[%s] Пробуем извлечь цены без заполнения дат", self.source_name)
 
-                # Ждём результаты
                 await page.wait_for_timeout(5000)
 
-                # Извлекаем цену
-                result = await self._extract_price_from(target)
+                # Извлекаем цену из iframe
+                result = await self._extract_price_from_frame(tl_frame)
 
                 if result.price is not None:
                     logger.info(
@@ -103,20 +77,11 @@ class HotelSiteParser(BaseParser):
                     )
                     return result
 
-                # Если не нашли — пробуем в основном документе
-                if target != page:
-                    result = await self._extract_price_from(page)
-                    if result.price is not None:
-                        logger.info(
-                            "[%s] %s | %s | цена: %d руб.",
-                            self.source_name, hotel_slug, checkin_date, result.price,
-                        )
-                        return result
-
                 if attempt < MAX_RETRIES:
                     await page.wait_for_timeout(RETRY_DELAY * 1000)
                     continue
 
+                await self._save_screenshot(page, hotel_slug, checkin_date)
                 return result
 
             except Exception as e:
@@ -134,114 +99,129 @@ class HotelSiteParser(BaseParser):
 
         return ParseResult(price=None, raw_text=None, error="max retries exceeded")
 
-    async def _fill_dates(self, target, checkin: date, checkout: date) -> bool:
-        """Заполняет даты в TravelLine виджете через JavaScript."""
+    async def _find_tl_frame(self, page: Page) -> Optional[Frame]:
+        """Находит TravelLine iframe на странице."""
+        # Ищем iframe внутри #tl-booking-form
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+            url = frame.url or ""
+            name = frame.name or ""
+            if "travelline" in url or "tlintegration" in url or name.startswith("tlFrame"):
+                return frame
+
+        # Fallback: ищем iframe по имени tlFrame внутри #tl-booking-form
+        tl_iframes = await page.query_selector_all("#tl-booking-form iframe, iframe[name^='tlFrame']")
+        for iframe_el in tl_iframes:
+            frame = await iframe_el.content_frame()
+            if frame:
+                return frame
+
+        # Логируем все frame для отладки
+        logger.info("[%s] Все frames на странице:", self.source_name)
+        for frame in page.frames:
+            logger.info("[%s]   frame: name=%s url=%s", self.source_name, frame.name, frame.url[:200] if frame.url else "none")
+
+        return None
+
+    async def _fill_dates_in_frame(self, frame: Frame, checkin: date, checkout: date) -> bool:
+        """Заполняет даты внутри TravelLine iframe."""
         checkin_str = checkin.strftime("%d.%m.%Y")
         checkout_str = checkout.strftime("%d.%m.%Y")
 
         try:
-            # Сначала скроллим к форме через JS
-            await target.evaluate("""
-                var form = document.querySelector('#tl-booking-form') ||
-                           document.querySelector('[class*="tl-booking"]') ||
-                           document.querySelector('[class*="booking-form"]');
-                if (form) form.scrollIntoView({behavior: 'smooth', block: 'center'});
-            """)
-            await target.wait_for_timeout(2000)
+            # Ищем все input внутри iframe
+            all_inputs = await frame.query_selector_all("input")
+            logger.info("[%s] Input'ов в iframe: %d", self.source_name, len(all_inputs))
+            for i, inp in enumerate(all_inputs[:10]):
+                inp_type = await inp.get_attribute("type") or ""
+                inp_name = await inp.get_attribute("name") or ""
+                inp_class = await inp.get_attribute("class") or ""
+                inp_placeholder = await inp.get_attribute("placeholder") or ""
+                logger.info(
+                    "[%s]   input[%d]: type=%s name=%s class=%s placeholder=%s",
+                    self.source_name, i, inp_type, inp_name, inp_class[:50], inp_placeholder,
+                )
 
-            # Логируем содержимое формы для отладки
-            form_html = await target.evaluate("""() => {
-                var form = document.querySelector('#tl-booking-form') ||
-                           document.querySelector('[class*="tl-booking"]');
-                return form ? form.innerHTML.substring(0, 2000) : 'FORM NOT FOUND';
-            }""")
-            logger.info("[%s] Содержимое формы: %s", self.source_name, form_html[:500])
-
-            # TravelLine использует input с определёнными классами
-            date_inputs = await target.query_selector_all(
-                "#tl-booking-form input, [class*='tl-booking'] input, "
-                "input[name*='date'], input[name*='Date'], "
+            # TravelLine date inputs
+            date_inputs = await frame.query_selector_all(
+                "input[class*='date'], input[name*='date'], input[name*='Date'], "
                 "input[placeholder*='заезд'], input[placeholder*='выезд'], "
-                "input[class*='date'], input[class*='Date'], "
-                "[class*='tl-datepicker'] input, [class*='datepicker'] input"
+                "input[placeholder*='Заезд'], input[placeholder*='Выезд'], "
+                "input[placeholder*='arrival'], input[placeholder*='departure'], "
+                "[class*='datepicker'] input, [class*='tl-datepicker'] input"
             )
-
-            logger.info("[%s] Найдено input: %d", self.source_name, len(date_inputs))
 
             if len(date_inputs) >= 2:
-                # Используем JS для заполнения
-                await target.evaluate("""(args) => {
-                    var inputs = document.querySelectorAll('#tl-booking-form input, [class*="tl-booking"] input');
-                    if (inputs.length >= 2) {
-                        var nativeSet = Object.getOwnPropertyDescriptor(
-                            window.HTMLInputElement.prototype, 'value').set;
-                        nativeSet.call(inputs[0], args.checkin);
-                        inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
-                        inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
-                        nativeSet.call(inputs[1], args.checkout);
-                        inputs[1].dispatchEvent(new Event('input', {bubbles: true}));
-                        inputs[1].dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                }""", {"checkin": checkin_str, "checkout": checkout_str})
-                await target.wait_for_timeout(1000)
+                logger.info("[%s] Найдены date input'ы: %d", self.source_name, len(date_inputs))
+                await date_inputs[0].click(force=True)
+                await frame.wait_for_timeout(500)
+                await date_inputs[0].fill(checkin_str)
+                await frame.wait_for_timeout(500)
 
-                # Нажимаем кнопку поиска через JS
-                await target.evaluate("""
-                    var btn = document.querySelector(
-                        '#tl-booking-form button, #tl-booking-form [type="submit"], ' +
-                        '[class*="tl-booking"] button, [class*="tl-btn-search"]'
-                    );
-                    if (btn) btn.click();
-                """)
-                await target.wait_for_timeout(5000)
+                await date_inputs[1].click(force=True)
+                await frame.wait_for_timeout(500)
+                await date_inputs[1].fill(checkout_str)
+                await frame.wait_for_timeout(500)
+
+                # Ищем кнопку поиска
+                search_btn = await frame.query_selector(
+                    "button[type='submit'], button[class*='search'], "
+                    "button[class*='btn'], input[type='submit'], "
+                    "[class*='tl-btn'], [class*='search-button']"
+                )
+                if search_btn:
+                    await search_btn.click(force=True)
+                    await frame.wait_for_timeout(5000)
+
                 return True
 
-            # Если input'ов нет — может это кастомные div-элементы
-            custom_dates = await target.query_selector_all(
-                "#tl-booking-form [class*='date'], [class*='tl-booking'] [class*='date'], "
-                "[class*='checkin'], [class*='arrival']"
+            # Альтернатива: TravelLine может использовать кликабельные div/span для дат
+            date_elements = await frame.query_selector_all(
+                "[class*='date'], [class*='checkin'], [class*='arrival'], "
+                "[data-type='checkin'], [class*='calendar-input']"
             )
-            logger.info("[%s] Кастомных date-элементов: %d", self.source_name, len(custom_dates))
+            if date_elements:
+                logger.info("[%s] Кликабельных date-элементов: %d", self.source_name, len(date_elements))
+                await date_elements[0].click(force=True)
+                await frame.wait_for_timeout(2000)
 
-            if custom_dates:
-                await target.evaluate("el => el.click()", custom_dates[0])
-                await target.wait_for_timeout(2000)
-                selected = await self._select_date_in_calendar(target, checkin)
+                # Выбираем дату в календаре
+                selected = await self._select_date_in_calendar(frame, checkin)
                 if selected:
-                    await target.wait_for_timeout(1000)
+                    await frame.wait_for_timeout(2000)
                     return True
 
-            logger.warning("[%s] Не удалось найти поля дат", self.source_name)
+            logger.warning("[%s] Не удалось найти поля дат в iframe", self.source_name)
             return False
 
         except Exception as e:
             logger.warning("[%s] Ошибка заполнения дат: %s", self.source_name, e)
             return False
 
-    async def _select_date_in_calendar(self, target, target_date: date) -> bool:
+    async def _select_date_in_calendar(self, frame: Frame, target_date: date) -> bool:
         """Выбирает дату в календаре TravelLine."""
         day_str = str(target_date.day)
         try:
-            # TravelLine calendar: td[data-day], td[data-date], div.day
             selectors = [
                 f"td[data-day='{target_date.day}']",
                 f"td[data-date='{target_date.isoformat()}']",
-                f"[data-date='{target_date.strftime('%Y-%m-%d')}']",
+                f"[data-date='{target_date.isoformat()}']",
             ]
             for sel in selectors:
-                el = await target.query_selector(sel)
+                el = await frame.query_selector(sel)
                 if el:
-                    await el.click()
+                    await el.click(force=True)
                     return True
 
             # Fallback: ищем ячейку с числом дня
-            cells = await target.query_selector_all("td, [class*='day']")
+            cells = await frame.query_selector_all("td, [class*='day']")
             for cell in cells:
                 text = (await cell.inner_text()).strip()
                 if text == day_str:
                     classes = await cell.get_attribute("class") or ""
                     if "disabled" not in classes and "past" not in classes:
-                        await cell.click()
+                        await cell.click(force=True)
                         return True
         except Exception:
             pass
@@ -250,56 +230,66 @@ class HotelSiteParser(BaseParser):
     def _get_widget_selector(self) -> str:
         """Возвращает CSS-селектор для ожидания виджета."""
         selectors = {
-            "travelline": "#tl-booking-form, [class*='tl-booking'], iframe[src*='travelline']",
+            "travelline": "#tl-booking-form, [class*='tl-booking'], iframe[name^='tlFrame']",
             "bnovo": "[class*='bnovo'], iframe[src*='bnovo'], #bnovo-widget",
         }
         return selectors.get(self.widget or "", "[class*='booking'], [class*='reservation']")
 
-    def _get_iframe_selector(self) -> str | None:
+    def _get_iframe_selector(self) -> Optional[str]:
         """Возвращает CSS-селектор iframe виджета."""
         selectors = {
-            "travelline": "iframe[src*='travelline']",
+            "travelline": "iframe[src*='travelline'], iframe[name^='tlFrame']",
             "bnovo": "iframe[src*='bnovo']",
         }
         return selectors.get(self.widget or "")
 
     async def _extract_price(self, page: Page) -> ParseResult:
-        """Для совместимости с BaseParser (не используется напрямую)."""
-        return await self._extract_price_from(page)
+        """Для совместимости с BaseParser."""
+        return await self._extract_price_from_frame(page)
 
-    async def _extract_price_from(self, target) -> ParseResult:
-        """Извлекает цену из TravelLine результатов."""
+    async def _extract_price_from_frame(self, target) -> ParseResult:
+        """Извлекает цену из TravelLine iframe."""
         selectors = [
-            "[class*='tl-room-price'], [class*='tl-price']",
-            "[class*='room-price'], [class*='RoomPrice']",
-            "[class*='price-value'], [class*='PriceValue']",
-            "[class*='rate-price'], [class*='RatePrice']",
-            "[class*='total-price'], [class*='TotalPrice']",
-            "[class*='price'] [class*='amount']",
-            "[class*='price'] [class*='value']",
+            "[class*='price']",
+            "[class*='Price']",
+            "[class*='cost']",
+            "[class*='rate']",
+            "[class*='amount']",
+            "[class*='value']",
+            "[class*='room'] [class*='sum']",
         ]
 
         for selector in selectors:
-            elements = await target.query_selector_all(selector)
-            for el in elements:
-                raw_text = await el.inner_text()
-                raw_text = raw_text.strip()
-                price = self.parse_price_text(raw_text)
-                if price is not None:
-                    return ParseResult(price=price, raw_text=raw_text, error=None)
-
-        # Ищем по символу рубля
-        try:
-            all_elements = await target.query_selector_all(
-                "[class*='price'], [class*='Price'], [class*='cost'], [class*='Cost'], "
-                "[class*='rate'], [class*='Rate']"
-            )
-            for el in all_elements[:20]:
-                text = await el.inner_text()
-                if "₽" in text or "руб" in text.lower() or "RUB" in text:
-                    price = self.parse_price_text(text)
+            try:
+                elements = await target.query_selector_all(selector)
+                for el in elements[:10]:
+                    raw_text = await el.inner_text()
+                    raw_text = raw_text.strip()
+                    if not raw_text:
+                        continue
+                    if "₽" in raw_text or "руб" in raw_text.lower() or "RUB" in raw_text:
+                        price = self.parse_price_text(raw_text)
+                        if price is not None:
+                            return ParseResult(price=price, raw_text=raw_text, error=None)
+                    # Пробуем парсить даже без символа валюты
+                    price = self.parse_price_text(raw_text)
                     if price is not None:
-                        return ParseResult(price=price, raw_text=text.strip(), error=None)
+                        return ParseResult(price=price, raw_text=raw_text, error=None)
+            except Exception:
+                continue
+
+        # Последний шанс — ищем любой текст с ₽
+        try:
+            all_text = await target.evaluate("""() => {
+                return document.body ? document.body.innerText : '';
+            }""")
+            import re
+            matches = re.findall(r'[\d\s]+₽', all_text)
+            if matches:
+                for match in matches[:5]:
+                    price = self.parse_price_text(match)
+                    if price is not None:
+                        return ParseResult(price=price, raw_text=match.strip(), error=None)
         except Exception:
             pass
 
