@@ -33,14 +33,15 @@ class HotelSiteParser(BaseParser):
                     self.source_name, hotel_slug, checkin_date, attempt,
                 )
 
-                await page.goto(url, wait_until="domcontentloaded")
-                await page.wait_for_timeout(5000)
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                await page.wait_for_timeout(8000)
 
                 # Ждём загрузку виджета бронирования
                 widget_selector = self._get_widget_selector()
-                tl_form = await page.wait_for_selector(widget_selector, timeout=15000)
+                tl_form = await page.wait_for_selector(widget_selector, timeout=30000)
 
                 if not tl_form:
+                    await self._save_screenshot(page, hotel_slug, checkin_date)
                     return ParseResult(
                         price=None, raw_text=None,
                         error=f"Widget not found (type={self.widget})",
