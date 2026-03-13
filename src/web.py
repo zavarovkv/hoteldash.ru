@@ -37,6 +37,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
         metabase-dashboard {{ display: block; width: 100%; height: 100vh; }}
+        /* Hide "Powered by Metabase" badge */
+        [class*="PoweredBy"], [class*="powered-by"], a[href*="metabase.com"] {{ display: none !important; }}
     </style>
 </head>
 <body>
@@ -59,6 +61,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </script>
 
 <metabase-dashboard token="{token}" with-title="true" with-downloads="true"></metabase-dashboard>
+
+<script>
+    // Hide "Powered by Metabase" badge inside Shadow DOM
+    (function hideBadge() {{
+        var el = document.querySelector('metabase-dashboard');
+        if (!el || !el.shadowRoot) {{
+            setTimeout(hideBadge, 500);
+            return;
+        }}
+        var style = document.createElement('style');
+        style.textContent = 'a[href*="metabase.com"], [class*="PoweredBy"], [class*="powered-by"] {{ display: none !important; }}';
+        el.shadowRoot.appendChild(style);
+        // Re-check in case Metabase re-renders
+        setInterval(function() {{
+            if (!el.shadowRoot.querySelector('style[data-hide-badge]')) {{
+                var s = document.createElement('style');
+                s.setAttribute('data-hide-badge', '1');
+                s.textContent = style.textContent;
+                el.shadowRoot.appendChild(s);
+            }}
+        }}, 2000);
+    }})();
+</script>
 
 </body>
 </html>"""
