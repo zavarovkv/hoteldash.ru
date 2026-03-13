@@ -16,22 +16,6 @@ hotels:
         url_template: "https://www.avito.ru/moskva/doma_otdykha/metropol-123456"
         has_dates: false
 
-  - slug: "national-moscow"
-    name: "Националь Москва"
-    city: "Москва"
-    stars: 5
-    sources:
-      yandex_travel:
-        url_template: "https://travel.yandex.ru/hotels/moscow/hotel-national--456/?checkinDate={checkin}&checkoutDate={checkout}&adults={adults}"
-      ostrovok:
-        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid_national/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
-      tbank:
-        url_template: "https://www.tbank.ru/travel/hotels/russia/moscow/national/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
-      onetwotrip:
-        url_template: "https://www.onetwotrip.com/ru/hotels/hotel/?checkIn={checkin}&checkOut={checkout}&adults={adults}"
-      avito:
-        url_template: "https://www.avito.ru/moskva/doma_otdykha/national-789012"
-        has_dates: false
 
 schedule:
   checkin_offsets_days: [1, 3, 7, 14, 30]
