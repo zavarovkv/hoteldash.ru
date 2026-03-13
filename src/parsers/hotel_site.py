@@ -135,66 +135,80 @@ class HotelSiteParser(BaseParser):
         return ParseResult(price=None, raw_text=None, error="max retries exceeded")
 
     async def _fill_dates(self, target, checkin: date, checkout: date) -> bool:
-        """Заполняет даты в TravelLine виджете."""
+        """Заполняет даты в TravelLine виджете через JavaScript."""
         checkin_str = checkin.strftime("%d.%m.%Y")
         checkout_str = checkout.strftime("%d.%m.%Y")
 
         try:
-            # TravelLine обычно использует input[data-date] или input внутри формы
+            # Сначала скроллим к форме через JS
+            await target.evaluate("""
+                var form = document.querySelector('#tl-booking-form') ||
+                           document.querySelector('[class*="tl-booking"]') ||
+                           document.querySelector('[class*="booking-form"]');
+                if (form) form.scrollIntoView({behavior: 'smooth', block: 'center'});
+            """)
+            await target.wait_for_timeout(2000)
+
+            # Логируем содержимое формы для отладки
+            form_html = await target.evaluate("""
+                var form = document.querySelector('#tl-booking-form') ||
+                           document.querySelector('[class*="tl-booking"]');
+                return form ? form.innerHTML.substring(0, 2000) : 'FORM NOT FOUND';
+            """)
+            logger.info("[%s] Содержимое формы: %s", self.source_name, form_html[:500])
+
+            # TravelLine использует input с определёнными классами
             date_inputs = await target.query_selector_all(
-                "input[type='text'], input[name*='date'], input[name*='Date'], "
+                "#tl-booking-form input, [class*='tl-booking'] input, "
+                "input[name*='date'], input[name*='Date'], "
                 "input[placeholder*='заезд'], input[placeholder*='выезд'], "
                 "input[class*='date'], input[class*='Date'], "
                 "[class*='tl-datepicker'] input, [class*='datepicker'] input"
             )
 
+            logger.info("[%s] Найдено input: %d", self.source_name, len(date_inputs))
+
             if len(date_inputs) >= 2:
-                await date_inputs[0].scroll_into_view_if_needed()
-                await date_inputs[0].click(force=True)
-                await date_inputs[0].fill("")
-                await date_inputs[0].type(checkin_str, delay=50)
-                await target.wait_for_timeout(500)
+                # Используем JS для заполнения
+                await target.evaluate("""(args) => {
+                    var inputs = document.querySelectorAll('#tl-booking-form input, [class*="tl-booking"] input');
+                    if (inputs.length >= 2) {
+                        var nativeSet = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement.prototype, 'value').set;
+                        nativeSet.call(inputs[0], args.checkin);
+                        inputs[0].dispatchEvent(new Event('input', {bubbles: true}));
+                        inputs[0].dispatchEvent(new Event('change', {bubbles: true}));
+                        nativeSet.call(inputs[1], args.checkout);
+                        inputs[1].dispatchEvent(new Event('input', {bubbles: true}));
+                        inputs[1].dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                }""", {"checkin": checkin_str, "checkout": checkout_str})
+                await target.wait_for_timeout(1000)
 
-                await date_inputs[1].scroll_into_view_if_needed()
-                await date_inputs[1].click(force=True)
-                await date_inputs[1].fill("")
-                await date_inputs[1].type(checkout_str, delay=50)
-                await target.wait_for_timeout(500)
-
-                # Нажимаем кнопку поиска
-                search_btn = await target.query_selector(
-                    "button[type='submit'], [class*='search-btn'], [class*='tl-btn'], "
-                    "button[class*='booking'], input[type='submit']"
-                )
-                if search_btn:
-                    await search_btn.scroll_into_view_if_needed()
-                    await search_btn.click(force=True)
-                    await target.wait_for_timeout(3000)
-
+                # Нажимаем кнопку поиска через JS
+                await target.evaluate("""
+                    var btn = document.querySelector(
+                        '#tl-booking-form button, #tl-booking-form [type="submit"], ' +
+                        '[class*="tl-booking"] button, [class*="tl-btn-search"]'
+                    );
+                    if (btn) btn.click();
+                """)
+                await target.wait_for_timeout(5000)
                 return True
 
-            # Альтернатива: TravelLine может использовать свой date picker
-            # Пробуем кликнуть на элементы с датами
-            date_elements = await target.query_selector_all(
-                "[class*='checkin'], [class*='check-in'], "
-                "[class*='arrival'], [data-type='checkin']"
+            # Если input'ов нет — может это кастомные div-элементы
+            custom_dates = await target.query_selector_all(
+                "#tl-booking-form [class*='date'], [class*='tl-booking'] [class*='date'], "
+                "[class*='checkin'], [class*='arrival']"
             )
-            if date_elements:
-                await date_elements[0].click()
-                await target.wait_for_timeout(1000)
-                # Выбираем дату в календаре
+            logger.info("[%s] Кастомных date-элементов: %d", self.source_name, len(custom_dates))
+
+            if custom_dates:
+                await target.evaluate("el => el.click()", custom_dates[0])
+                await target.wait_for_timeout(2000)
                 selected = await self._select_date_in_calendar(target, checkin)
                 if selected:
                     await target.wait_for_timeout(1000)
-                    # Checkout обычно выбирается автоматически после checkin
-                    checkout_el = await target.query_selector(
-                        "[class*='checkout'], [class*='check-out'], "
-                        "[class*='departure'], [data-type='checkout']"
-                    )
-                    if checkout_el:
-                        await checkout_el.click()
-                        await target.wait_for_timeout(1000)
-                        await self._select_date_in_calendar(target, checkout)
                     return True
 
             logger.warning("[%s] Не удалось найти поля дат", self.source_name)
