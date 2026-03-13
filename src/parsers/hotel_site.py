@@ -21,17 +21,35 @@ class HotelSiteParser(BaseParser):
 
     async def _extract_price(self, page: Page) -> ParseResult:
         """Извлекает цену со страницы TravelLine booking engine."""
-        # Ждём полную загрузку Angular SPA
+        # Ждём загрузку формы TravelLine
         try:
             await page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
-        await page.wait_for_timeout(10000)
+        await page.wait_for_timeout(5000)
 
-        # Пробуем дождаться появления элементов с ценами
+        # Нажимаем кнопку "Найти"
+        search_clicked = await page.evaluate("""() => {
+            var buttons = document.querySelectorAll('button');
+            for (var b of buttons) {
+                var text = b.innerText.trim().toLowerCase();
+                if (text === 'найти' || text === 'search' || text === 'find') {
+                    b.click();
+                    return true;
+                }
+            }
+            // Fallback: первая primary кнопка
+            var btn = document.querySelector('button.x-button--primary, button[type="submit"]');
+            if (btn) { btn.click(); return true; }
+            return false;
+        }""")
+        logger.info("[%s] Кнопка 'Найти' нажата: %s", self.source_name, search_clicked)
+
+        # Ждём загрузку результатов после поиска
+        await page.wait_for_timeout(10000)
         try:
             await page.wait_for_selector(
-                "[class*='price'], [class*='room'], [class*='rate'], [class*='accommodation']",
+                "[class*='price'], [class*='room-type'], [class*='rate'], [class*='accommodation']",
                 timeout=20000,
             )
         except Exception:
