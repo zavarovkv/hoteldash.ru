@@ -38,10 +38,30 @@ class HotelSiteParser(BaseParser):
 
                 # Ждём загрузку виджета бронирования
                 widget_selector = self._get_widget_selector()
-                tl_form = await page.wait_for_selector(widget_selector, timeout=30000)
+                try:
+                    tl_form = await page.wait_for_selector(widget_selector, timeout=30000)
+                except Exception:
+                    tl_form = None
 
                 if not tl_form:
+                    # Логируем что есть на странице для отладки
+                    iframes = await page.query_selector_all("iframe")
+                    logger.info("[%s] Найдено iframe: %d", self.source_name, len(iframes))
+                    for i, iframe in enumerate(iframes[:5]):
+                        src = await iframe.get_attribute("src") or "no-src"
+                        logger.info("[%s] iframe[%d] src=%s", self.source_name, i, src)
+
+                    forms = await page.query_selector_all("form, [id*='booking'], [class*='booking'], [id*='tl-'], [class*='tl-']")
+                    logger.info("[%s] Элементов booking/tl: %d", self.source_name, len(forms))
+                    for el in forms[:5]:
+                        tag = await el.evaluate("e => e.tagName + '#' + (e.id || '') + '.' + (e.className || '')")
+                        logger.info("[%s] элемент: %s", self.source_name, tag)
+
                     await self._save_screenshot(page, hotel_slug, checkin_date)
+
+                    if attempt < MAX_RETRIES:
+                        await page.wait_for_timeout(RETRY_DELAY * 1000)
+                        continue
                     return ParseResult(
                         price=None, raw_text=None,
                         error=f"Widget not found (type={self.widget})",
