@@ -106,8 +106,7 @@ class HotelSiteParser(BaseParser):
         for frame in page.frames:
             logger.info("[%s]   frame: name=%s url=%s", self.source_name, frame.name, (frame.url or "none")[:200])
 
-        # Ищем iframe с реальным URL (не about:blank)
-        best_frame = None
+        # Ищем ПЕРВЫЙ iframe с реальным URL (не about:blank)
         for frame in page.frames:
             if frame == page.main_frame:
                 continue
@@ -115,11 +114,7 @@ class HotelSiteParser(BaseParser):
             name = frame.name or ""
             is_tl = name.startswith("tlFrame") or "travelline" in url or "tlintegration" in url
             if is_tl and url and url != "about:blank":
-                best_frame = frame
-                # Не прерываем — берём последний (основной) iframe
-
-        if best_frame:
-            return best_frame
+                return frame
 
         # Fallback: ищем iframe по элементам DOM (с реальным src)
         tl_iframes = await page.query_selector_all("#tl-booking-form iframe[src], iframe[name^='tlFrame'][src]")
@@ -171,25 +166,46 @@ class HotelSiteParser(BaseParser):
 
             if len(date_inputs) >= 2:
                 logger.info("[%s] Найдены date input'ы: %d", self.source_name, len(date_inputs))
-                await date_inputs[0].click(force=True)
-                await frame.wait_for_timeout(500)
-                await date_inputs[0].fill(checkin_str)
-                await frame.wait_for_timeout(500)
 
-                await date_inputs[1].click(force=True)
-                await frame.wait_for_timeout(500)
-                await date_inputs[1].fill(checkout_str)
-                await frame.wait_for_timeout(500)
+                # Заполняем через JavaScript чтобы обойти visibility check
+                await frame.evaluate("""(args) => {
+                    var inp1 = document.querySelector("input[name='field_1']");
+                    var inp2 = document.querySelector("input[name='field_2']");
+                    if (!inp1 || !inp2) {
+                        var inputs = document.querySelectorAll("input.x-text-field__input");
+                        inp1 = inputs[0];
+                        inp2 = inputs[1];
+                    }
+                    if (inp1 && inp2) {
+                        var nativeSet = Object.getOwnPropertyDescriptor(
+                            window.HTMLInputElement.prototype, 'value').set;
+                        nativeSet.call(inp1, args.checkin);
+                        inp1.dispatchEvent(new Event('input', {bubbles: true}));
+                        inp1.dispatchEvent(new Event('change', {bubbles: true}));
+                        inp1.dispatchEvent(new Event('blur', {bubbles: true}));
+                        nativeSet.call(inp2, args.checkout);
+                        inp2.dispatchEvent(new Event('input', {bubbles: true}));
+                        inp2.dispatchEvent(new Event('change', {bubbles: true}));
+                        inp2.dispatchEvent(new Event('blur', {bubbles: true}));
+                    }
+                }""", {"checkin": checkin_str, "checkout": checkout_str})
+                await frame.wait_for_timeout(2000)
 
-                # Ищем кнопку поиска
-                search_btn = await frame.query_selector(
-                    "button[type='submit'], button[class*='search'], "
-                    "button[class*='btn'], input[type='submit'], "
-                    "[class*='tl-btn'], [class*='search-button']"
-                )
-                if search_btn:
-                    await search_btn.click(force=True)
-                    await frame.wait_for_timeout(5000)
+                # Нажимаем кнопку поиска через JS
+                clicked = await frame.evaluate("""() => {
+                    var btn = document.querySelector(
+                        "button[type='submit'], button.x-button, " +
+                        "[class*='search'] button, [class*='btn-search'], " +
+                        "button[class*='btn'], .x-button--primary"
+                    );
+                    if (btn) { btn.click(); return true; }
+                    // Fallback: первая кнопка
+                    var anyBtn = document.querySelector("button");
+                    if (anyBtn) { anyBtn.click(); return true; }
+                    return false;
+                }""")
+                logger.info("[%s] Кнопка поиска нажата: %s", self.source_name, clicked)
+                await frame.wait_for_timeout(8000)
 
                 return True
 
