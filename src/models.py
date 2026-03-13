@@ -27,6 +27,7 @@ class Hotel(Base):
     city = Column(String(100), nullable=False)
     stars = Column(SmallInteger)
     slug = Column(String(100), unique=True, nullable=False)
+    website = Column(String(500))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     prices = relationship("Price", back_populates="hotel")

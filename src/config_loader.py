@@ -15,6 +15,7 @@ class SourceConfig:
     name: str
     url_template: str
     has_dates: bool = True
+    widget: Optional[str] = None  # 'travelline', 'bnovo', etc.
 
 
 @dataclass
@@ -23,6 +24,7 @@ class HotelConfig:
     name: str
     city: str
     stars: Optional[int]
+    website: Optional[str] = None
     sources: List[SourceConfig] = field(default_factory=list)
 
 
@@ -76,8 +78,9 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
                     raise ValueError(
                         f"Hotel '{h['slug']}', source '{source_name}': unknown placeholder {e}"
                     )
+            widget = source_data.get("widget")
             sources.append(
-                SourceConfig(name=source_name, url_template=url_template, has_dates=has_dates)
+                SourceConfig(name=source_name, url_template=url_template, has_dates=has_dates, widget=widget)
             )
         hotels.append(
             HotelConfig(
@@ -85,6 +88,7 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
                 name=h["name"],
                 city=h["city"],
                 stars=h.get("stars"),
+                website=h.get("website"),
                 sources=sources,
             )
         )

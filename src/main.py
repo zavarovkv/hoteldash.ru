@@ -16,6 +16,7 @@ from src.parsers.tbank import TbankParser
 from src.parsers.onetwotrip import OneTwoTripParser
 from src.parsers.yandex_travel import YandexTravelParser
 from src.parsers.avito import AvitoParser
+from src.parsers.hotel_site import HotelSiteParser
 from src.utils.browser import create_browser, create_context
 from src.utils.antibot import delay_between_pages, delay_between_hotels, shuffle_items
 from src.utils.notifications import notify_scrape_complete, notify_error
@@ -33,6 +34,7 @@ PARSERS = {
     "onetwotrip": OneTwoTripParser,
     "yandex_travel": YandexTravelParser,
     "avito": AvitoParser,
+    "hotel_site": HotelSiteParser,
 }
 
 
@@ -46,6 +48,7 @@ def ensure_hotel_in_db(session, hotel_config) -> int:
         city=hotel_config.city,
         stars=hotel_config.stars,
         slug=hotel_config.slug,
+        website=hotel_config.website,
     )
     session.add(hotel)
     session.flush()
@@ -115,7 +118,7 @@ async def run_scraping(
                         logger.warning("Нет парсера для источника: %s", source_config.name)
                         continue
 
-                    parser = parser_class()
+                    parser = parser_class(widget=source_config.widget) if source_config.name == "hotel_site" else parser_class()
                     context = await create_context(browser)
 
                     try:

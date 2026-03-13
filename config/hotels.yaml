@@ -3,6 +3,7 @@ hotels:
     name: "Метрополь Москва"
     city: "Москва"
     stars: 5
+    website: "https://metropol-moscow.ru"
     sources:
       yandex_travel:
         url_template: "https://travel.yandex.ru/hotels/moscow/hotel-metropol--123/?checkinDate={checkin}&checkoutDate={checkout}&adults={adults}"
@@ -15,6 +16,10 @@ hotels:
       avito:
         url_template: "https://www.avito.ru/moskva/doma_otdykha/metropol-123456"
         has_dates: false
+      hotel_site:
+        url_template: "https://metropol-moscow.ru/"
+        has_dates: false
+        widget: travelline
 
 
 schedule:
