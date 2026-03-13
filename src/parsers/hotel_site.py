@@ -100,27 +100,35 @@ class HotelSiteParser(BaseParser):
         return ParseResult(price=None, raw_text=None, error="max retries exceeded")
 
     async def _find_tl_frame(self, page: Page) -> Optional[Frame]:
-        """Находит TravelLine iframe на странице."""
-        # Ищем iframe внутри #tl-booking-form
+        """Находит TravelLine iframe с реальным контентом."""
+        # Логируем все frames для отладки
+        logger.info("[%s] Все frames на странице (%d):", self.source_name, len(page.frames))
+        for frame in page.frames:
+            logger.info("[%s]   frame: name=%s url=%s", self.source_name, frame.name, (frame.url or "none")[:200])
+
+        # Ищем iframe с реальным URL (не about:blank)
+        best_frame = None
         for frame in page.frames:
             if frame == page.main_frame:
                 continue
             url = frame.url or ""
             name = frame.name or ""
-            if "travelline" in url or "tlintegration" in url or name.startswith("tlFrame"):
-                return frame
+            is_tl = name.startswith("tlFrame") or "travelline" in url or "tlintegration" in url
+            if is_tl and url and url != "about:blank":
+                best_frame = frame
+                # Не прерываем — берём последний (основной) iframe
 
-        # Fallback: ищем iframe по имени tlFrame внутри #tl-booking-form
-        tl_iframes = await page.query_selector_all("#tl-booking-form iframe, iframe[name^='tlFrame']")
+        if best_frame:
+            return best_frame
+
+        # Fallback: ищем iframe по элементам DOM (с реальным src)
+        tl_iframes = await page.query_selector_all("#tl-booking-form iframe[src], iframe[name^='tlFrame'][src]")
         for iframe_el in tl_iframes:
-            frame = await iframe_el.content_frame()
-            if frame:
-                return frame
-
-        # Логируем все frame для отладки
-        logger.info("[%s] Все frames на странице:", self.source_name)
-        for frame in page.frames:
-            logger.info("[%s]   frame: name=%s url=%s", self.source_name, frame.name, frame.url[:200] if frame.url else "none")
+            src = await iframe_el.get_attribute("src") or ""
+            if src and src != "about:blank":
+                frame = await iframe_el.content_frame()
+                if frame:
+                    return frame
 
         return None
 
