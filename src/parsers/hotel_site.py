@@ -40,6 +40,9 @@ class HotelSiteParser(BaseParser):
                 widget_selector = self._get_widget_selector()
                 try:
                     tl_form = await page.wait_for_selector(widget_selector, timeout=30000)
+                    if tl_form:
+                        await tl_form.scroll_into_view_if_needed()
+                        await page.wait_for_timeout(2000)
                 except Exception:
                     tl_form = None
 
@@ -146,12 +149,14 @@ class HotelSiteParser(BaseParser):
             )
 
             if len(date_inputs) >= 2:
-                await date_inputs[0].click()
+                await date_inputs[0].scroll_into_view_if_needed()
+                await date_inputs[0].click(force=True)
                 await date_inputs[0].fill("")
                 await date_inputs[0].type(checkin_str, delay=50)
                 await target.wait_for_timeout(500)
 
-                await date_inputs[1].click()
+                await date_inputs[1].scroll_into_view_if_needed()
+                await date_inputs[1].click(force=True)
                 await date_inputs[1].fill("")
                 await date_inputs[1].type(checkout_str, delay=50)
                 await target.wait_for_timeout(500)
@@ -162,7 +167,8 @@ class HotelSiteParser(BaseParser):
                     "button[class*='booking'], input[type='submit']"
                 )
                 if search_btn:
-                    await search_btn.click()
+                    await search_btn.scroll_into_view_if_needed()
+                    await search_btn.click(force=True)
                     await target.wait_for_timeout(3000)
 
                 return True
