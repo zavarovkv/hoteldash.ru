@@ -13,7 +13,6 @@ from typing import Optional
 from playwright.async_api import Page
 
 from config.settings import (
-    ELEMENT_WAIT_TIMEOUT,
     SCREENSHOTS_DIR,
     SAVE_SCREENSHOTS_ON_ERROR,
     MAX_RETRIES,

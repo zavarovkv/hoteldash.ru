@@ -1,6 +1,7 @@
 """SQLAlchemy модели для HotelDash."""
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
     Column,
@@ -13,6 +14,13 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
+
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+
+def now_moscow() -> datetime:
+    """Текущее время в московском часовом поясе (naive для БД)."""
+    return datetime.now(MOSCOW_TZ).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
@@ -28,7 +36,7 @@ class Hotel(Base):
     stars = Column(SmallInteger)
     slug = Column(String(100), unique=True, nullable=False)
     website = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_moscow)
 
     prices = relationship("Price", back_populates="hotel")
 
@@ -44,7 +52,7 @@ class Price(Base):
     checkin_offset_days = Column(Integer)
     price = Column(Integer)
     currency = Column(String(3), default="RUB")
-    scraped_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    scraped_at = Column(DateTime, nullable=False, default=now_moscow)
     url = Column(String(1000))
     raw_price_text = Column(String(100))
     error = Column(String(500))
@@ -61,7 +69,7 @@ class ScrapeRun(Base):
     __tablename__ = "scrape_runs"
 
     id = Column(Integer, primary_key=True)
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=False, default=now_moscow)
     finished_at = Column(DateTime)
     total_tasks = Column(Integer, default=0)
     successful = Column(Integer, default=0)

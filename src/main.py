@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 from src.config_loader import load_config, build_url, get_checkin_dates
 from src.db import get_session
-from src.models import Hotel, Price, ScrapeRun
+from src.models import Hotel, Price, ScrapeRun, now_moscow
 from src.parsers.ostrovok import OstrovokParser
 from src.parsers.hotel_site import HotelSiteParser
 from src.utils.browser import create_browser, create_context
@@ -22,6 +22,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logging.Formatter.converter = lambda *_: now_moscow().timetuple()
 logger = logging.getLogger(__name__)
 
 PARSERS = {
@@ -47,58 +48,7 @@ def ensure_hotel_in_db(session, hotel_config) -> int:
     return hotel.id
 
 
-async def _scrape_source_http(
-    parser,
-    hotel_config,
-    hotel_id: int,
-    source_config,
-    checkin_dates,
-    adults: int,
-    base_date: date,
-) -> tuple[int, int, int]:
-    """Парсит HTTP-источник (без браузера)."""
-    total = 0
-    ok = 0
-    fail = 0
-    nights = 1
-
-    for checkin in checkin_dates:
-        checkout = checkin + timedelta(days=nights)
-        total += 1
-
-        if source_config.has_dates:
-            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
-        else:
-            url = source_config.url_template
-
-        result = await parser.scrape_http(url, hotel_config.slug, checkin.isoformat())
-
-        with get_session() as session:
-            price_record = Price(
-                hotel_id=hotel_id,
-                source=source_config.name,
-                checkin_date=checkin,
-                checkin_offset_days=(checkin - base_date).days,
-                nights=nights,
-                price=result.price,
-                currency="RUB",
-                url=url,
-                raw_price_text=result.raw_text[:100] if result.raw_text else None,
-                error=result.error,
-            )
-            session.add(price_record)
-
-        if result.price is not None:
-            ok += 1
-        else:
-            fail += 1
-
-        await delay_between_pages()
-
-    return total, ok, fail
-
-
-async def _scrape_source_browser(
+async def _scrape_source(
     browser,
     parser,
     hotel_config,
@@ -108,7 +58,7 @@ async def _scrape_source_browser(
     adults: int,
     base_date: date,
 ) -> tuple[int, int, int]:
-    """Парсит источник через Playwright (для SPA-сайтов)."""
+    """Парсит источник через Playwright."""
     total = 0
     ok = 0
     fail = 0
@@ -168,9 +118,8 @@ async def run_scraping(
     """Основной цикл скрейпинга."""
     config = load_config()
 
-    # Начало scrape_run
     with get_session() as session:
-        run = ScrapeRun(started_at=datetime.utcnow())
+        run = ScrapeRun(started_at=now_moscow())
         session.add(run)
         session.flush()
         run_id = run.id
@@ -186,7 +135,6 @@ async def run_scraping(
             logger.error("Отель '%s' не найден в конфигурации", hotel_slug)
             return
 
-    # Определяем даты
     base_date = date.today()
     if checkin_override:
         checkin_dates = [date.fromisoformat(checkin_override)]
@@ -194,8 +142,6 @@ async def run_scraping(
         checkin_dates = get_checkin_dates(config.schedule.checkin_offsets_days, base_date)
 
     adults = config.schedule.adults
-
-    # Рандомизируем порядок
     hotels = shuffle_items(hotels)
 
     try:
@@ -214,54 +160,28 @@ async def run_scraping(
                         )
                         continue
 
-                # Разделяем на HTTP и browser источники
-                http_tasks = []
-                browser_sources = []
                 for sc in sources:
                     parser_class = PARSERS.get(sc.name)
                     if not parser_class:
                         logger.warning("Нет парсера для источника: %s", sc.name)
                         continue
+
                     parser = (
                         parser_class(widget=sc.widget)
                         if sc.name == "hotel_site"
                         else parser_class()
                     )
-                    if getattr(parser, "needs_browser", True):
-                        browser_sources.append((parser, sc))
-                    else:
-                        http_tasks.append(_scrape_source_http(
-                            parser, hotel_config, hotel_id,
-                            sc, checkin_dates, adults, base_date,
-                        ))
 
-                # HTTP-источники запускаем параллельно
-                if http_tasks:
-                    http_results = await asyncio.gather(*http_tasks, return_exceptions=True)
-                    for res in http_results:
-                        if isinstance(res, Exception):
-                            logger.error("Ошибка в HTTP-источнике: %s", res)
-                            failed += 1
-                            total_tasks += 1
-                        else:
-                            t, s, f = res
-                            total_tasks += t
-                            successful += s
-                            failed += f
-
-                # Browser-источники запускаем последовательно (один Chromium контекст)
-                for parser, sc in browser_sources:
                     try:
-                        res = await _scrape_source_browser(
+                        t, s, f = await _scrape_source(
                             browser, parser, hotel_config, hotel_id,
                             sc, checkin_dates, adults, base_date,
                         )
-                        t, s, f = res
                         total_tasks += t
                         successful += s
                         failed += f
                     except Exception as e:
-                        logger.error("Ошибка в browser-источнике %s: %s", sc.name, e)
+                        logger.error("Ошибка в источнике %s: %s", sc.name, e)
                         failed += 1
                         total_tasks += 1
 
@@ -277,7 +197,7 @@ async def run_scraping(
         with get_session() as session:
             run = session.get(ScrapeRun, run_id)
             if run:
-                run.finished_at = datetime.utcnow()
+                run.finished_at = now_moscow()
                 run.total_tasks = total_tasks
                 run.successful = successful
                 run.failed = failed
