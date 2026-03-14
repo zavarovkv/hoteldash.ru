@@ -15,6 +15,63 @@ logger = logging.getLogger(__name__)
 _API_WAIT_MAX_MS = 30_000
 _API_POLL_INTERVAL_MS = 500
 
+_OZON_STEALTH_SCRIPT = """
+// Убираем все признаки автоматизации
+Object.defineProperty(navigator, 'webdriver', {get: () => false});
+delete navigator.__proto__.webdriver;
+
+// Chrome runtime
+window.chrome = {
+    runtime: {
+        connect: function() {},
+        sendMessage: function() {},
+        onMessage: {addListener: function() {}, removeListener: function() {}},
+    },
+    loadTimes: function() { return {}; },
+    csi: function() { return {}; },
+};
+
+// Plugins — как в реальном Chrome
+Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+        const plugins = [
+            {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+            {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+            {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''},
+        ];
+        plugins.length = 3;
+        return plugins;
+    }
+});
+
+// Permissions
+const originalQuery = window.Permissions.prototype.query;
+window.Permissions.prototype.query = function(parameters) {
+    if (parameters.name === 'notifications') {
+        return Promise.resolve({state: Notification.permission});
+    }
+    return originalQuery.call(this, parameters);
+};
+
+// WebGL
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(param) {
+    if (param === 37445) return 'Intel Inc.';
+    if (param === 37446) return 'Intel Iris OpenGL Engine';
+    return getParameter.call(this, param);
+};
+
+// Connection
+Object.defineProperty(navigator, 'connection', {
+    get: () => ({effectiveType: '4g', rtt: 50, downlink: 10, saveData: false}),
+});
+
+// Platform
+Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+"""
+
 
 class OzonTravelParser(BaseParser):
     source_name = "ozon_travel"
@@ -72,12 +129,8 @@ class OzonTravelParser(BaseParser):
             self.source_name, hotel_slug, checkin_date,
         )
 
-        # Сначала заходим на главную Ozon — получить куки и пройти антибот
-        try:
-            await page.goto("https://www.ozon.ru/", wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_timeout(3000)
-        except Exception:
-            pass
+        # Расширенный стелс для обхода Ozon антибот-защиты
+        await page.add_init_script(_OZON_STEALTH_SCRIPT)
 
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
