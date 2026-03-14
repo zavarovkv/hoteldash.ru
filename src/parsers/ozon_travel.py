@@ -20,6 +20,7 @@ _API_POLL_INTERVAL_MS = 500
 class OzonTravelParser(BaseParser):
     source_name = "ozon_travel"
     needs_browser = True
+    use_headed = True
 
     @property
     def proxy_url(self) -> Optional[str]:

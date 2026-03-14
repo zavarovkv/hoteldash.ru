@@ -2,6 +2,7 @@
 
 import os
 import logging
+import subprocess
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -45,31 +46,47 @@ def _parse_proxy_url(raw: str) -> dict:
     return {"server": raw if "://" in raw else f"http://{raw}"}
 
 
+def _ensure_xvfb() -> None:
+    """Запускает Xvfb если он ещё не запущен."""
+    display = os.environ.get("DISPLAY")
+    if display:
+        return
+
+    try:
+        subprocess.Popen(
+            ["Xvfb", ":99", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        os.environ["DISPLAY"] = ":99"
+        logger.info("Xvfb запущен на :99")
+    except FileNotFoundError:
+        logger.warning("Xvfb не найден — headed mode недоступен")
+
+
 @asynccontextmanager
-async def create_browser(proxy_url: Optional[str] = None, use_firefox: bool = False):
+async def create_browser(proxy_url: Optional[str] = None, headed: bool = False):
     """Создаёт и возвращает браузер Playwright."""
     async with async_playwright() as p:
         effective_proxy = proxy_url or os.getenv("PROXY_URL")
 
-        if use_firefox:
-            launch_args = {"headless": True}
-            if effective_proxy:
-                launch_args["proxy"] = _parse_proxy_url(effective_proxy)
-                logger.info("Firefox запущен с прокси: %s", effective_proxy.split("@")[-1])
-            browser = await p.firefox.launch(**launch_args)
-        else:
-            launch_args = {
-                "headless": True,
-                "args": [
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                ],
-            }
-            if effective_proxy:
-                launch_args["proxy"] = _parse_proxy_url(effective_proxy)
-                logger.info("Chromium запущен с прокси: %s", effective_proxy.split("@")[-1])
-            browser = await p.chromium.launch(**launch_args)
+        launch_args = {
+            "headless": not headed,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        }
 
+        if headed:
+            _ensure_xvfb()
+            logger.info("Chromium запущен в headed mode (Xvfb)")
+
+        if effective_proxy:
+            launch_args["proxy"] = _parse_proxy_url(effective_proxy)
+            logger.info("Прокси: %s", effective_proxy.split("@")[-1])
+
+        browser = await p.chromium.launch(**launch_args)
         try:
             yield browser
         finally:
