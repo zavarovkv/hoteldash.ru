@@ -129,8 +129,22 @@ class OzonTravelParser(BaseParser):
             self.source_name, hotel_slug, checkin_date,
         )
 
-        # Расширенный стелс для обхода Ozon антибот-защиты
+        # Стелс для обхода Ozon антибот-защиты
         await page.add_init_script(_OZON_STEALTH_SCRIPT)
+
+        # Подменяем заголовки — Ozon проверяет Sec-Ch-Ua
+        await page.set_extra_http_headers({
+            "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        })
 
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
