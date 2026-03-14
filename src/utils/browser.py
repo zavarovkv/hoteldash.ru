@@ -3,6 +3,7 @@
 import os
 import logging
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -59,6 +60,7 @@ def _ensure_xvfb() -> None:
             stderr=subprocess.DEVNULL,
         )
         os.environ["DISPLAY"] = ":99"
+        time.sleep(1)
         logger.info("Xvfb запущен на :99")
     except FileNotFoundError:
         logger.warning("Xvfb не найден — headed mode недоступен")
