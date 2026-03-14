@@ -3,6 +3,7 @@
 import os
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from fake_useragent import UserAgent
@@ -27,11 +28,28 @@ window.chrome = {runtime: {}};
 """
 
 
+def _parse_proxy_url(raw: str) -> dict:
+    """Парсит proxy URL 'user:pass@host:port' в dict для Playwright."""
+    if "@" in raw:
+        auth_part, server_part = raw.rsplit("@", 1)
+        if "://" in auth_part:
+            scheme, auth_part = auth_part.split("://", 1)
+        else:
+            scheme = "http"
+        user, password = auth_part.split(":", 1)
+        return {
+            "server": f"{scheme}://{server_part}",
+            "username": user,
+            "password": password,
+        }
+    return {"server": raw if "://" in raw else f"http://{raw}"}
+
+
 @asynccontextmanager
-async def create_browser():
+async def create_browser(proxy_url: Optional[str] = None):
     """Создаёт и возвращает браузер Playwright."""
     async with async_playwright() as p:
-        proxy_url = os.getenv("PROXY_URL")
+        effective_proxy = proxy_url or os.getenv("PROXY_URL")
         launch_args = {
             "headless": True,
             "args": [
@@ -39,8 +57,9 @@ async def create_browser():
                 "--no-sandbox",
             ],
         }
-        if proxy_url:
-            launch_args["proxy"] = {"server": proxy_url}
+        if effective_proxy:
+            launch_args["proxy"] = _parse_proxy_url(effective_proxy)
+            logger.info("Браузер запущен с прокси: %s", effective_proxy.split("@")[-1])
 
         browser = await p.chromium.launch(**launch_args)
         try:

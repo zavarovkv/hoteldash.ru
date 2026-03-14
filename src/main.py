@@ -175,10 +175,19 @@ async def run_scraping(
                     )
 
                     try:
-                        t, s, f = await _scrape_source(
-                            browser, parser, hotel_config, hotel_id,
-                            sc, checkin_dates, adults, base_date,
-                        )
+                        proxy = getattr(parser, "proxy_url", None)
+                        if proxy:
+                            # Источник с прокси — отдельный браузер
+                            async with create_browser(proxy_url=proxy) as proxy_browser:
+                                t, s, f = await _scrape_source(
+                                    proxy_browser, parser, hotel_config, hotel_id,
+                                    sc, checkin_dates, adults, base_date,
+                                )
+                        else:
+                            t, s, f = await _scrape_source(
+                                browser, parser, hotel_config, hotel_id,
+                                sc, checkin_dates, adults, base_date,
+                            )
                         total_tasks += t
                         successful += s
                         failed += f

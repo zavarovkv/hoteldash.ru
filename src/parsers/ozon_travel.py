@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Optional
 
 from playwright.async_api import Page, Response
@@ -15,67 +16,14 @@ logger = logging.getLogger(__name__)
 _API_WAIT_MAX_MS = 30_000
 _API_POLL_INTERVAL_MS = 500
 
-_OZON_STEALTH_SCRIPT = """
-// Убираем все признаки автоматизации
-Object.defineProperty(navigator, 'webdriver', {get: () => false});
-delete navigator.__proto__.webdriver;
-
-// Chrome runtime
-window.chrome = {
-    runtime: {
-        connect: function() {},
-        sendMessage: function() {},
-        onMessage: {addListener: function() {}, removeListener: function() {}},
-    },
-    loadTimes: function() { return {}; },
-    csi: function() { return {}; },
-};
-
-// Plugins — как в реальном Chrome
-Object.defineProperty(navigator, 'plugins', {
-    get: () => {
-        const plugins = [
-            {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
-            {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
-            {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''},
-        ];
-        plugins.length = 3;
-        return plugins;
-    }
-});
-
-// Permissions
-const originalQuery = window.Permissions.prototype.query;
-window.Permissions.prototype.query = function(parameters) {
-    if (parameters.name === 'notifications') {
-        return Promise.resolve({state: Notification.permission});
-    }
-    return originalQuery.call(this, parameters);
-};
-
-// WebGL
-const getParameter = WebGLRenderingContext.prototype.getParameter;
-WebGLRenderingContext.prototype.getParameter = function(param) {
-    if (param === 37445) return 'Intel Inc.';
-    if (param === 37446) return 'Intel Iris OpenGL Engine';
-    return getParameter.call(this, param);
-};
-
-// Connection
-Object.defineProperty(navigator, 'connection', {
-    get: () => ({effectiveType: '4g', rtt: 50, downlink: 10, saveData: false}),
-});
-
-// Platform
-Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
-Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
-Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
-"""
-
 
 class OzonTravelParser(BaseParser):
     source_name = "ozon_travel"
     needs_browser = True
+
+    @property
+    def proxy_url(self) -> Optional[str]:
+        return os.getenv("OZON_PROXY_URL")
 
     async def scrape(self, page: Page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Перехватывает API-ответы с ценами."""
@@ -83,41 +31,35 @@ class OzonTravelParser(BaseParser):
 
         async def on_response(response: Response):
             try:
-                resp_url = response.url
                 content_type = response.headers.get("content-type", "")
-                status = response.status
-
-                # Логируем все ответы для диагностики (кроме мусора)
-                skip = (".js", ".css", ".png", ".jpg", ".svg", ".woff", ".ico",
-                        "google", "yandex.ru/metrika", "mc.yandex", "facebook",
-                        "/analytics", "/log", "/tracking")
-                if any(s in resp_url for s in skip):
+                if response.status != 200 or "json" not in content_type:
                     return
 
-                logger.info(
-                    "[%s] RESP %d %s (type=%s)",
-                    self.source_name, status, resp_url[:120], content_type[:30],
-                )
+                resp_url = response.url
 
-                if status != 200 or "json" not in content_type:
+                # Пропускаем аналитику и статику
+                skip = ("/static/", "/analytics", "/log", "/tracking", "/banner",
+                        "/suggest", "/health", "google", "yandex", "mc.yandex",
+                        "/abt/")
+                if any(s in resp_url for s in skip):
                     return
 
                 body = await response.json()
 
                 if isinstance(body, dict):
-                    keys = list(body.keys())[:15]
                     logger.info(
-                        "[%s] JSON %s → ключи: %s",
-                        self.source_name, resp_url[:100], keys,
+                        "[%s] API %s → ключи: %s",
+                        self.source_name, resp_url[:100],
+                        list(body.keys())[:15],
                     )
 
-                    prices = self._extract_prices(body)
-                    if prices:
-                        logger.info(
-                            "[%s] API %s → %d цен найдено",
-                            self.source_name, resp_url[:100], len(prices),
-                        )
-                        captured_prices.extend(prices)
+                prices = self._extract_prices(body)
+                if prices:
+                    logger.info(
+                        "[%s] API %s → %d цен найдено",
+                        self.source_name, resp_url[:100], len(prices),
+                    )
+                    captured_prices.extend(prices)
 
             except Exception:
                 pass
@@ -129,40 +71,10 @@ class OzonTravelParser(BaseParser):
             self.source_name, hotel_slug, checkin_date,
         )
 
-        # Стелс для обхода Ozon антибот-защиты
-        await page.add_init_script(_OZON_STEALTH_SCRIPT)
-
-        # Подменяем заголовки — Ozon проверяет Sec-Ch-Ua
-        await page.set_extra_http_headers({
-            "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        })
-
         try:
-            await page.goto(url, wait_until="load", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             logger.warning("[%s] goto timeout: %s", self.source_name, type(e).__name__)
-
-        # Логируем заголовок страницы и URL после загрузки
-        title = await page.title()
-        final_url = page.url
-        logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, final_url[:120])
-
-        # Ждём — JS-челлендж может авторешиться через несколько секунд
-        await page.wait_for_timeout(5000)
-
-        title2 = await page.title()
-        final_url2 = page.url
-        if title2 != title or final_url2 != final_url:
-            logger.info("[%s] После ожидания: title='%s', url=%s", self.source_name, title2, final_url2[:120])
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
@@ -173,7 +85,7 @@ class OzonTravelParser(BaseParser):
         if captured_prices:
             min_price = min(captured_prices)
             logger.info(
-                "[%s] %s | %s | мин. цена: %d руб. (из %d вариантов)",
+                "[%s] %s | %s | мін. цена: %d руб. (из %d вариантов)",
                 self.source_name, hotel_slug, checkin_date,
                 min_price, len(captured_prices),
             )
@@ -185,7 +97,7 @@ class OzonTravelParser(BaseParser):
 
         return ParseResult(price=None, raw_text=None, error="no prices in API responses")
 
-    def _extract_prices(self, data: dict) -> list[int]:
+    def _extract_prices(self, data) -> list[int]:
         """Извлекает цены из JSON-ответа Ozon Travel API."""
         prices = []
         self._find_prices_recursive(data, prices, depth=0)
@@ -197,7 +109,6 @@ class OzonTravelParser(BaseParser):
             return
 
         if isinstance(obj, dict):
-            # Ищем ключи, содержащие цену
             for key, value in obj.items():
                 key_lower = key.lower()
                 if any(k in key_lower for k in ("price", "amount", "cost", "total")):
@@ -205,7 +116,6 @@ class OzonTravelParser(BaseParser):
                     if p is not None:
                         prices.append(p)
 
-            # Рекурсия по значениям
             for value in obj.values():
                 if isinstance(value, (dict, list)):
                     self._find_prices_recursive(value, prices, depth + 1)
@@ -226,16 +136,6 @@ class OzonTravelParser(BaseParser):
                 return price
         except (ValueError, TypeError, OverflowError):
             pass
-
-        # Цена может быть в копейках (Ozon часто так делает)
-        try:
-            kopecks = int(float(val))
-            price = kopecks // 100
-            if 5000 <= price <= 1_000_000:
-                return price
-        except (ValueError, TypeError, OverflowError):
-            pass
-
         return None
 
     async def _extract_price(self, page: Page) -> ParseResult:
