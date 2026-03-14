@@ -28,8 +28,19 @@ class HotelSiteParser(BaseParser):
             pass
         await page.wait_for_timeout(5000)
 
-        # TravelLine reactApp=true использует Shadow DOM.
-        # Playwright locators пронизывают Shadow DOM автоматически.
+        # Дампим HTML страницы для отладки
+        html_dump = await page.evaluate("() => document.documentElement.outerHTML.substring(0, 3000)")
+        logger.info("[%s] HTML страницы: %s", self.source_name, html_dump[:1500])
+
+        # Проверяем все элементы включая Shadow DOM
+        shadow_info = await page.evaluate("""() => {
+            var result = [];
+            document.querySelectorAll('*').forEach(el => {
+                if (el.shadowRoot) result.push(el.tagName + '.' + (el.className || '').substring(0, 50));
+            });
+            return result;
+        }""")
+        logger.info("[%s] Элементы с Shadow DOM: %s", self.source_name, shadow_info)
 
         # Нажимаем кнопку "Найти" через locator (пронизывает Shadow DOM)
         try:
