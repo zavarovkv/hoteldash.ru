@@ -97,9 +97,17 @@ class HotelSiteParser(BaseParser):
                         text = text.strip()
                         if not text:
                             continue
+                        # Ищем конкретно цену с ₽ в тексте
+                        rub_match = re.search(r'([\d\s\u2009]+)\s*₽', text)
+                        if rub_match:
+                            price_str = rub_match.group(1) + '₽'
+                            price = self.parse_price_text(price_str)
+                            if price is not None:
+                                return ParseResult(price=price, raw_text=price_str.strip(), error=None)
+                        # Fallback: весь текст
                         price = self.parse_price_text(text)
                         if price is not None:
-                            return ParseResult(price=price, raw_text=text, error=None)
+                            return ParseResult(price=price, raw_text=text[:100], error=None)
                     except Exception:
                         continue
             except Exception:

@@ -147,7 +147,7 @@ async def run_scraping(
                                         nights=nights,
                                         price=result.price,
                                         currency="RUB",
-                                        raw_price_text=result.raw_text,
+                                        raw_price_text=result.raw_text[:100] if result.raw_text else None,
                                         error=result.error,
                                     )
                                     session.add(price_record)
