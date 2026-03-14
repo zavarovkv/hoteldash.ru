@@ -47,22 +47,21 @@ class HotelSiteParser(BaseParser):
         }""")
         logger.info("[%s] Элементы с Shadow DOM: %s", self.source_name, shadow_info)
 
-        # Нажимаем кнопку "Найти" через locator (пронизывает Shadow DOM)
+        # Нажимаем кнопку "Найти"
         try:
-            search_btn = page.get_by_role("button", name=re.compile(r"найти|search|find", re.IGNORECASE))
-            if await search_btn.count() > 0:
-                await search_btn.first.click()
-                logger.info("[%s] Кнопка 'Найти' нажата через locator", self.source_name)
-            else:
-                # Fallback: ищем по тексту
-                btn = page.locator("button").filter(has_text=re.compile(r"найти|search", re.IGNORECASE))
-                if await btn.count() > 0:
-                    await btn.first.click()
-                    logger.info("[%s] Кнопка 'Найти' нажата через text filter", self.source_name)
-                else:
-                    logger.warning("[%s] Кнопка 'Найти' не найдена", self.source_name)
+            # Логируем текст единственной кнопки
+            btn_text = await page.evaluate("""() => {
+                var btn = document.querySelector('button');
+                return btn ? btn.outerHTML.substring(0, 300) : 'NO BUTTON';
+            }""")
+            logger.info("[%s] Кнопка HTML: %s", self.source_name, btn_text)
+
+            # Кликаем единственную кнопку на странице
+            btn = page.locator("button").first
+            await btn.click(timeout=10000)
+            logger.info("[%s] Кнопка нажата", self.source_name)
         except Exception as e:
-            logger.warning("[%s] Ошибка при клике 'Найти': %s", self.source_name, e)
+            logger.warning("[%s] Ошибка при клике: %s", self.source_name, e)
 
         # Ждём загрузку результатов
         await page.wait_for_timeout(15000)
