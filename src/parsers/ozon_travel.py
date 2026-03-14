@@ -80,10 +80,16 @@ class OzonTravelParser(BaseParser):
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
-            logger.warning("[%s] goto timeout: %s", self.source_name, type(e).__name__)
+            logger.warning("[%s] goto error: %s: %s", self.source_name, type(e).__name__, str(e)[:200])
 
-        title = await page.title()
-        logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, page.url[:120])
+        # Даём странице устояться после редиректов
+        await page.wait_for_timeout(3000)
+
+        try:
+            title = await page.title()
+            logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, page.url[:120])
+        except Exception:
+            logger.warning("[%s] Не удалось получить title, url=%s", self.source_name, page.url[:120])
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
