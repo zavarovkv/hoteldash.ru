@@ -7,6 +7,8 @@ hotels:
     sources:
       ostrovok:
         url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7595994/metropol_hotel/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
+      ozon_travel:
+        url_template: "https://www.ozon.ru/travel/hotels/product/613318873/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
       hotel_site:
         url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=6315&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
         has_dates: true

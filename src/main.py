@@ -13,6 +13,7 @@ from src.db import get_session
 from src.models import Hotel, Price, ScrapeRun, now_moscow
 from src.parsers.ostrovok import OstrovokParser
 from src.parsers.hotel_site import HotelSiteParser
+from src.parsers.ozon_travel import OzonTravelParser
 from src.utils.browser import create_browser, create_context
 from src.utils.antibot import delay_between_pages, delay_between_hotels, shuffle_items
 from src.utils.notifications import notify_scrape_complete, notify_error
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 PARSERS = {
     "ostrovok": OstrovokParser,
     "hotel_site": HotelSiteParser,
+    "ozon_travel": OzonTravelParser,
 }
 
 
