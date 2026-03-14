@@ -48,58 +48,43 @@ class OstrovokParser(BaseParser):
 
         page.on("response", on_response)
 
-        for attempt in range(1, 3):
-            try:
-                logger.info(
-                    "[%s] %s | checkin=%s | попытка %d",
-                    self.source_name, hotel_slug, checkin_date, attempt,
-                )
+        logger.info(
+            "[%s] %s | checkin=%s",
+            self.source_name, hotel_slug, checkin_date,
+        )
 
-                await page.goto(url, wait_until="domcontentloaded")
-                # Ждём загрузки API-ответов с ценами
-                await page.wait_for_timeout(10000)
+        # Навигация — таймаут не критичен, API-ответы могут прийти до полной загрузки
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning("[%s] goto timeout (ожидаемо для SPA): %s", self.source_name, type(e).__name__)
 
-                if captured_prices:
-                    min_price = min(captured_prices)
-                    logger.info(
-                        "[%s] %s | %s | мин. цена: %d руб. (из %d вариантов)",
-                        self.source_name, hotel_slug, checkin_date,
-                        min_price, len(captured_prices),
-                    )
-                    return ParseResult(
-                        price=min_price,
-                        raw_text=f"{min_price} ₽",
-                        error=None,
-                    )
+        # Ждём API-ответы с ценами
+        await page.wait_for_timeout(15000)
 
-                # Логируем что пришло для диагностики
-                if captured_responses:
-                    logger.info(
-                        "[%s] JSON-ответы без цен: %s",
-                        self.source_name,
-                        json.dumps(captured_responses[:5], ensure_ascii=False)[:500],
-                    )
+        # Проверяем перехваченные цены
+        if captured_prices:
+            min_price = min(captured_prices)
+            logger.info(
+                "[%s] %s | %s | мин. цена: %d руб. (из %d вариантов)",
+                self.source_name, hotel_slug, checkin_date,
+                min_price, len(captured_prices),
+            )
+            return ParseResult(
+                price=min_price,
+                raw_text=f"{min_price} ₽",
+                error=None,
+            )
 
-                if attempt < 2:
-                    captured_prices.clear()
-                    captured_responses.clear()
-                    await page.wait_for_timeout(5000)
-                    continue
+        # Логируем что пришло для диагностики
+        if captured_responses:
+            logger.info(
+                "[%s] JSON-ответы без цен: %s",
+                self.source_name,
+                json.dumps(captured_responses[:5], ensure_ascii=False)[:500],
+            )
 
-                return ParseResult(price=None, raw_text=None, error="no prices in API responses")
-
-            except Exception as e:
-                error_msg = f"{type(e).__name__}: {e}"
-                logger.error(
-                    "[%s] %s | %s | ошибка (попытка %d): %s",
-                    self.source_name, hotel_slug, checkin_date, attempt, error_msg,
-                )
-                if attempt < 2:
-                    await page.wait_for_timeout(5000)
-                    continue
-                return ParseResult(price=None, raw_text=None, error=error_msg)
-
-        return ParseResult(price=None, raw_text=None, error="max retries exceeded")
+        return ParseResult(price=None, raw_text=None, error="no prices in API responses")
 
     def _extract_prices_from_json(self, data, depth: int = 0) -> list[int]:
         """Рекурсивно ищет цены в JSON-ответе."""
