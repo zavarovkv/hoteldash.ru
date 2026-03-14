@@ -14,9 +14,7 @@ RUN apt-get update && \
 # Зависимости Python (кэшируются отдельным слоем)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    playwright install chromium && \
-    playwright install firefox && \
-    playwright install-deps firefox
+    playwright install chromium
 
 # Код приложения
 COPY config/ config/
