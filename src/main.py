@@ -54,6 +54,7 @@ async def _scrape_source_http(
     source_config,
     checkin_dates,
     adults: int,
+    base_date: date,
 ) -> tuple[int, int, int]:
     """Парсит HTTP-источник (без браузера)."""
     total = 0
@@ -77,6 +78,7 @@ async def _scrape_source_http(
                 hotel_id=hotel_id,
                 source=source_config.name,
                 checkin_date=checkin,
+                checkin_offset_days=(checkin - base_date).days,
                 nights=nights,
                 price=result.price,
                 currency="RUB",
@@ -103,6 +105,7 @@ async def _scrape_source_browser(
     source_config,
     checkin_dates,
     adults: int,
+    base_date: date,
 ) -> tuple[int, int, int]:
     """Парсит источник через Playwright (для SPA-сайтов)."""
     total = 0
@@ -132,6 +135,7 @@ async def _scrape_source_browser(
                         hotel_id=hotel_id,
                         source=source_config.name,
                         checkin_date=checkin,
+                        checkin_offset_days=(checkin - base_date).days,
                         nights=nights,
                         price=result.price,
                         currency="RUB",
@@ -181,10 +185,11 @@ async def run_scraping(
             return
 
     # Определяем даты
+    base_date = date.today()
     if checkin_override:
         checkin_dates = [date.fromisoformat(checkin_override)]
     else:
-        checkin_dates = get_checkin_dates(config.schedule.checkin_offsets_days)
+        checkin_dates = get_checkin_dates(config.schedule.checkin_offsets_days, base_date)
 
     adults = config.schedule.adults
 
@@ -222,12 +227,12 @@ async def run_scraping(
                     if getattr(parser, "needs_browser", True):
                         tasks.append(_scrape_source_browser(
                             browser, parser, hotel_config, hotel_id,
-                            sc, checkin_dates, adults,
+                            sc, checkin_dates, adults, base_date,
                         ))
                     else:
                         tasks.append(_scrape_source_http(
                             parser, hotel_config, hotel_id,
-                            sc, checkin_dates, adults,
+                            sc, checkin_dates, adults, base_date,
                         ))
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 

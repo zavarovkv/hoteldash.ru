@@ -41,6 +41,7 @@ class Price(Base):
     source = Column(String(50), nullable=False)
     checkin_date = Column(Date, nullable=False)
     nights = Column(Integer, nullable=False, default=1)
+    checkin_offset_days = Column(Integer)
     price = Column(Integer)
     currency = Column(String(3), default="RUB")
     scraped_at = Column(DateTime, nullable=False, default=datetime.utcnow)
