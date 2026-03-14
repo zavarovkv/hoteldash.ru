@@ -72,6 +72,13 @@ class OzonTravelParser(BaseParser):
             self.source_name, hotel_slug, checkin_date,
         )
 
+        # Сначала заходим на главную Ozon — получить куки и пройти антибот
+        try:
+            await page.goto("https://www.ozon.ru/", wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_timeout(3000)
+        except Exception:
+            pass
+
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
