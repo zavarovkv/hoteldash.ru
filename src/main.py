@@ -60,11 +60,10 @@ async def _scrape_source(
     hotel_config,
     hotel_id: int,
     source_config,
-    nights_list,
     checkin_dates,
     adults: int,
 ) -> tuple[int, int, int]:
-    """Парсит один источник последовательно по всем ночам и датам.
+    """Парсит один источник последовательно по всем датам.
 
     Возвращает (total, successful, failed).
     """
@@ -82,46 +81,46 @@ async def _scrape_source(
     total = 0
     ok = 0
     fail = 0
+    nights = 1
 
     context = await create_context(browser)
     try:
-        for nights in nights_list:
-            for checkin in checkin_dates:
-                checkout = checkin + timedelta(days=nights)
-                total += 1
+        for checkin in checkin_dates:
+            checkout = checkin + timedelta(days=nights)
+            total += 1
 
-                page = await context.new_page()
-                try:
-                    if source_config.has_dates:
-                        url = build_url(source_config.url_template, checkin, checkout, nights, adults)
-                    else:
-                        url = source_config.url_template
+            page = await context.new_page()
+            try:
+                if source_config.has_dates:
+                    url = build_url(source_config.url_template, checkin, checkout, nights, adults)
+                else:
+                    url = source_config.url_template
 
-                    result = await parser.scrape(
-                        page, url, hotel_config.slug, checkin.isoformat()
+                result = await parser.scrape(
+                    page, url, hotel_config.slug, checkin.isoformat()
+                )
+
+                with get_session() as session:
+                    price_record = Price(
+                        hotel_id=hotel_id,
+                        source=source_config.name,
+                        checkin_date=checkin,
+                        nights=nights,
+                        price=result.price,
+                        currency="RUB",
+                        raw_price_text=result.raw_text[:100] if result.raw_text else None,
+                        error=result.error,
                     )
+                    session.add(price_record)
 
-                    with get_session() as session:
-                        price_record = Price(
-                            hotel_id=hotel_id,
-                            source=source_config.name,
-                            checkin_date=checkin,
-                            nights=nights,
-                            price=result.price,
-                            currency="RUB",
-                            raw_price_text=result.raw_text[:100] if result.raw_text else None,
-                            error=result.error,
-                        )
-                        session.add(price_record)
+                if result.price is not None:
+                    ok += 1
+                else:
+                    fail += 1
+            finally:
+                await page.close()
 
-                    if result.price is not None:
-                        ok += 1
-                    else:
-                        fail += 1
-                finally:
-                    await page.close()
-
-                await delay_between_pages()
+            await delay_between_pages()
     finally:
         await context.close()
 
@@ -160,7 +159,6 @@ async def run_scraping(
     else:
         checkin_dates = get_checkin_dates(config.schedule.checkin_offsets_days)
 
-    nights_list = config.schedule.nights
     adults = config.schedule.adults
 
     # Рандомизируем порядок
@@ -186,7 +184,7 @@ async def run_scraping(
                 tasks = [
                     _scrape_source(
                         browser, hotel_config, hotel_id,
-                        sc, nights_list, checkin_dates, adults,
+                        sc, checkin_dates, adults,
                     )
                     for sc in sources
                 ]

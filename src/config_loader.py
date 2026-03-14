@@ -31,7 +31,6 @@ class HotelConfig:
 @dataclass
 class ScheduleConfig:
     checkin_offsets_days: List[int]
-    nights: List[int]
     adults: int
 
 
@@ -96,7 +95,6 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
     schedule_raw = raw.get("schedule", {})
     schedule = ScheduleConfig(
         checkin_offsets_days=schedule_raw.get("checkin_offsets_days", [1, 3, 7, 14, 30]),
-        nights=schedule_raw.get("nights", [1]) if isinstance(schedule_raw.get("nights"), list) else [schedule_raw.get("nights", 1)],
         adults=schedule_raw.get("adults", 2),
     )
 
