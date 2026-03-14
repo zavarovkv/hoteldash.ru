@@ -47,21 +47,32 @@ class HotelSiteParser(BaseParser):
         }""")
         logger.info("[%s] Элементы с Shadow DOM: %s", self.source_name, shadow_info)
 
-        # Нажимаем кнопку "Найти"
+        # Находим элемент "Найти" (это не <button>, а <a> или <div>)
         try:
-            # Логируем текст единственной кнопки
-            btn_text = await page.evaluate("""() => {
-                var btn = document.querySelector('button');
-                return btn ? btn.outerHTML.substring(0, 300) : 'NO BUTTON';
+            # Найдём элемент через JS по тексту
+            find_el_info = await page.evaluate("""() => {
+                var all = document.querySelectorAll('*');
+                for (var el of all) {
+                    if (el.childNodes.length <= 3) {
+                        var text = el.textContent.trim();
+                        if (text === 'Найти' || text === 'Search') {
+                            return {tag: el.tagName, class: el.className.substring(0, 100), id: el.id};
+                        }
+                    }
+                }
+                return null;
             }""")
-            logger.info("[%s] Кнопка HTML: %s", self.source_name, btn_text)
+            logger.info("[%s] Элемент 'Найти': %s", self.source_name, find_el_info)
 
-            # Кликаем единственную кнопку на странице
-            btn = page.locator("button").first
-            await btn.click(timeout=10000)
-            logger.info("[%s] Кнопка нажата", self.source_name)
+            if find_el_info:
+                # Кликаем по тексту через locator
+                search_el = page.get_by_text("Найти", exact=True)
+                await search_el.click(timeout=10000)
+                logger.info("[%s] 'Найти' нажата", self.source_name)
+            else:
+                logger.warning("[%s] Элемент 'Найти' не найден", self.source_name)
         except Exception as e:
-            logger.warning("[%s] Ошибка при клике: %s", self.source_name, e)
+            logger.warning("[%s] Ошибка при клике 'Найти': %s", self.source_name, e)
 
         # Ждём загрузку результатов
         await page.wait_for_timeout(15000)
