@@ -2,8 +2,6 @@
 
 import os
 import logging
-import subprocess
-import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -47,25 +45,6 @@ def _parse_proxy_url(raw: str) -> dict:
     return {"server": raw if "://" in raw else f"http://{raw}"}
 
 
-def _ensure_xvfb() -> None:
-    """Запускает Xvfb если он ещё не запущен."""
-    display = os.environ.get("DISPLAY")
-    if display:
-        return
-
-    try:
-        subprocess.Popen(
-            ["Xvfb", ":99", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        os.environ["DISPLAY"] = ":99"
-        time.sleep(1)
-        logger.info("Xvfb запущен на :99")
-    except FileNotFoundError:
-        logger.warning("Xvfb не найден — headed mode недоступен")
-
-
 @asynccontextmanager
 async def create_browser(proxy_url: Optional[str] = None, headed: bool = False):
     """Создаёт и возвращает браузер Playwright."""
@@ -81,8 +60,7 @@ async def create_browser(proxy_url: Optional[str] = None, headed: bool = False):
         }
 
         if headed:
-            _ensure_xvfb()
-            logger.info("Chromium запущен в headed mode (Xvfb)")
+            logger.info("Chromium в headed mode (требуется DISPLAY/xvfb-run)")
 
         if effective_proxy:
             launch_args["proxy"] = _parse_proxy_url(effective_proxy)
