@@ -21,6 +21,8 @@ class OzonTravelParser(BaseParser):
     source_name = "ozon_travel"
     needs_browser = True
 
+    use_firefox = True
+
     @property
     def proxy_url(self) -> Optional[str]:
         return os.getenv("OZON_PROXY_URL")

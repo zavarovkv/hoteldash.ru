@@ -46,22 +46,30 @@ def _parse_proxy_url(raw: str) -> dict:
 
 
 @asynccontextmanager
-async def create_browser(proxy_url: Optional[str] = None):
+async def create_browser(proxy_url: Optional[str] = None, use_firefox: bool = False):
     """Создаёт и возвращает браузер Playwright."""
     async with async_playwright() as p:
         effective_proxy = proxy_url or os.getenv("PROXY_URL")
-        launch_args = {
-            "headless": True,
-            "args": [
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ],
-        }
-        if effective_proxy:
-            launch_args["proxy"] = _parse_proxy_url(effective_proxy)
-            logger.info("Браузер запущен с прокси: %s", effective_proxy.split("@")[-1])
 
-        browser = await p.chromium.launch(**launch_args)
+        if use_firefox:
+            launch_args = {"headless": True}
+            if effective_proxy:
+                launch_args["proxy"] = _parse_proxy_url(effective_proxy)
+                logger.info("Firefox запущен с прокси: %s", effective_proxy.split("@")[-1])
+            browser = await p.firefox.launch(**launch_args)
+        else:
+            launch_args = {
+                "headless": True,
+                "args": [
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                ],
+            }
+            if effective_proxy:
+                launch_args["proxy"] = _parse_proxy_url(effective_proxy)
+                logger.info("Chromium запущен с прокси: %s", effective_proxy.split("@")[-1])
+            browser = await p.chromium.launch(**launch_args)
+
         try:
             yield browser
         finally:
