@@ -105,18 +105,6 @@ class OstrovokParser(BaseParser):
                         "hotel_rates", "search_results", "data", "items"):
                 if key in data and isinstance(data[key], list):
                     items = data[key]
-                    if items and isinstance(items[0], dict):
-                        logger.info(
-                            "[%s] Ключ '%s': %d элементов, ключи первого: %s",
-                            self.source_name, key, len(items),
-                            list(items[0].keys())[:20],
-                        )
-                        # Логируем первый элемент полностью (обрезаем для безопасности)
-                        logger.info(
-                            "[%s] Первый элемент '%s': %s",
-                            self.source_name, key,
-                            json.dumps(items[0], ensure_ascii=False, default=str)[:2000],
-                        )
                     for item in items:
                         price = self._get_room_price(item)
                         if price is not None:
@@ -173,6 +161,14 @@ class OstrovokParser(BaseParser):
                 if 5000 <= price <= 1_000_000:
                     return price
             elif isinstance(val, str):
+                # Сначала пробуем как число с десятичной точкой ("34200.00")
+                try:
+                    price = int(float(val))
+                    if 5000 <= price <= 1_000_000:
+                        return price
+                except (ValueError, OverflowError):
+                    pass
+                # Фоллбэк: парсим как текст с валютой ("34 200 ₽")
                 p = self.parse_price_text(val)
                 if p is not None and 5000 <= p <= 1_000_000:
                     return p
