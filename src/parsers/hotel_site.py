@@ -28,9 +28,14 @@ class HotelSiteParser(BaseParser):
             pass
         await page.wait_for_timeout(5000)
 
-        # Дампим HTML страницы для отладки
-        html_dump = await page.evaluate("() => document.documentElement.outerHTML.substring(0, 3000)")
-        logger.info("[%s] HTML страницы: %s", self.source_name, html_dump[:1500])
+        # Дампим body HTML для отладки
+        body_html = await page.evaluate("() => document.body ? document.body.innerHTML.substring(0, 3000) : 'NO BODY'")
+        logger.info("[%s] BODY HTML: %s", self.source_name, body_html[:2000])
+
+        # Считаем все элементы
+        element_count = await page.evaluate("() => document.body ? document.body.querySelectorAll('*').length : 0")
+        button_count = await page.evaluate("() => document.body ? document.body.querySelectorAll('button').length : 0")
+        logger.info("[%s] Всего элементов: %d, кнопок: %d", self.source_name, element_count, button_count)
 
         # Проверяем все элементы включая Shadow DOM
         shadow_info = await page.evaluate("""() => {
