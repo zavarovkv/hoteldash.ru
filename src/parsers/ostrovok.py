@@ -104,7 +104,20 @@ class OstrovokParser(BaseParser):
             for key in ("rooms", "rates", "room_groups", "results", "offers",
                         "hotel_rates", "search_results", "data", "items"):
                 if key in data and isinstance(data[key], list):
-                    for item in data[key]:
+                    items = data[key]
+                    if items and isinstance(items[0], dict):
+                        logger.info(
+                            "[%s] Ключ '%s': %d элементов, ключи первого: %s",
+                            self.source_name, key, len(items),
+                            list(items[0].keys())[:20],
+                        )
+                        # Логируем первый элемент полностью (обрезаем для безопасности)
+                        logger.info(
+                            "[%s] Первый элемент '%s': %s",
+                            self.source_name, key,
+                            json.dumps(items[0], ensure_ascii=False, default=str)[:2000],
+                        )
+                    for item in items:
                         price = self._get_room_price(item)
                         if price is not None:
                             prices.append(price)
