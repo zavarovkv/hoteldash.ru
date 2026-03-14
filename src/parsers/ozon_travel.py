@@ -37,18 +37,24 @@ class OzonTravelParser(BaseParser):
 
                 resp_url = response.url
 
-                # Пропускаем аналитику и статику
-                skip = ("/static/", "/analytics", "/log", "/tracking", "/banner",
-                        "/suggest", "/health", "google", "yandex", "mc.yandex",
-                        "/abt/")
-                if any(s in resp_url for s in skip):
+                # Пропускаем статику
+                skip = (".js", ".css", ".png", ".jpg", ".svg", ".woff", ".ico",
+                        ".gif", ".webp", ".ttf", ".eot")
+                if any(resp_url.endswith(s) or (s + "?") in resp_url for s in skip):
                     return
+
+                # Логируем все ответы для диагностики
+                logger.info(
+                    "[%s] RESP %d %s (type=%s)",
+                    self.source_name, response.status, resp_url[:120],
+                    content_type[:40],
+                )
 
                 body = await response.json()
 
                 if isinstance(body, dict):
                     logger.info(
-                        "[%s] API %s → ключи: %s",
+                        "[%s] JSON %s → ключи: %s",
                         self.source_name, resp_url[:100],
                         list(body.keys())[:15],
                     )
@@ -75,6 +81,9 @@ class OzonTravelParser(BaseParser):
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             logger.warning("[%s] goto timeout: %s", self.source_name, type(e).__name__)
+
+        title = await page.title()
+        logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, page.url[:120])
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
