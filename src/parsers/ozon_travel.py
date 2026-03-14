@@ -26,29 +26,34 @@ class OzonTravelParser(BaseParser):
 
         async def on_response(response: Response):
             try:
+                resp_url = response.url
                 content_type = response.headers.get("content-type", "")
-                if response.status != 200 or "json" not in content_type:
+                status = response.status
+
+                # Логируем все ответы для диагностики (кроме мусора)
+                skip = (".js", ".css", ".png", ".jpg", ".svg", ".woff", ".ico",
+                        "google", "yandex.ru/metrika", "mc.yandex", "facebook",
+                        "/analytics", "/log", "/tracking")
+                if any(s in resp_url for s in skip):
                     return
 
-                resp_url = response.url
+                logger.info(
+                    "[%s] RESP %d %s (type=%s)",
+                    self.source_name, status, resp_url[:120], content_type[:30],
+                )
 
-                # Пропускаем статику, аналитику, рекламу
-                skip = ("/static/", "/analytics", "/log", "/tracking", "/banner",
-                        "/suggest", "/health", "google", "yandex", "mc.yandex")
-                if any(s in resp_url for s in skip):
+                if status != 200 or "json" not in content_type:
                     return
 
                 body = await response.json()
 
-                # Логируем все JSON-ответы для диагностики структуры API
                 if isinstance(body, dict):
                     keys = list(body.keys())[:15]
                     logger.info(
-                        "[%s] API %s → ключи: %s",
+                        "[%s] JSON %s → ключи: %s",
                         self.source_name, resp_url[:100], keys,
                     )
 
-                    # Ищем цены в ответе
                     prices = self._extract_prices(body)
                     if prices:
                         logger.info(
