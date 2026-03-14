@@ -11,8 +11,8 @@ from src.parsers.base import BaseParser, ParseResult
 
 logger = logging.getLogger(__name__)
 
-# Максимальное время ожидания API-ответа (мс)
-_API_WAIT_MAX_MS = 15_000
+# Максимальное время ожидания API-ответа после goto (мс)
+_API_WAIT_MAX_MS = 30_000
 _API_POLL_INTERVAL_MS = 500
 
 
