@@ -30,19 +30,24 @@ class OstrovokParser(BaseParser):
                 if response.status != 200 or "json" not in content_type:
                     return
 
+                # Ловим только endpoint поиска номеров
+                if "/hp/search" not in response.url:
+                    return
+
                 body = await response.json()
-                prices = self._extract_prices_from_json(body)
+                prices = self._extract_room_prices(body)
                 if prices:
                     logger.info(
-                        "[%s] API %s → %d цен найдено",
+                        "[%s] API %s → %d цен номеров",
                         self.source_name, response.url[:80], len(prices),
                     )
                     captured_prices.extend(prices)
                 else:
-                    captured_responses.append({
-                        "url": response.url[:120],
-                        "keys": list(body.keys()) if isinstance(body, dict) else type(body).__name__,
-                    })
+                    logger.info(
+                        "[%s] API %s → ответ без цен, ключи: %s",
+                        self.source_name, response.url[:80],
+                        list(body.keys())[:10] if isinstance(body, dict) else type(body).__name__,
+                    )
             except Exception:
                 pass
 
@@ -86,37 +91,105 @@ class OstrovokParser(BaseParser):
 
         return ParseResult(price=None, raw_text=None, error="no prices in API responses")
 
-    def _extract_prices_from_json(self, data, depth: int = 0) -> list[int]:
-        """Рекурсивно ищет цены в JSON-ответе."""
-        if depth > 8:
-            return []
-
+    def _extract_room_prices(self, data) -> list[int]:
+        """Извлекает цены номеров из ответа /hp/search API Островка."""
         prices = []
 
+        # Логируем структуру для диагностики
         if isinstance(data, dict):
-            for key, value in data.items():
-                key_lower = key.lower()
-                # Ключи, которые могут содержать цену
-                if any(k in key_lower for k in (
-                    "price", "rate", "amount", "total", "cost",
-                    "min_price", "max_price", "daily_price",
-                )):
-                    if isinstance(value, (int, float)) and 1000 <= value <= 1_000_000:
-                        prices.append(int(value))
-                    elif isinstance(value, str):
-                        p = self.parse_price_text(value)
-                        if p is not None:
-                            prices.append(p)
-                # Рекурсия
-                if isinstance(value, (dict, list)):
-                    prices.extend(self._extract_prices_from_json(value, depth + 1))
+            top_keys = list(data.keys())
+            logger.debug("[%s] Структура ответа: %s", self.source_name, top_keys[:15])
 
-        elif isinstance(data, list):
-            for item in data[:50]:  # Лимит чтобы не зациклиться
-                if isinstance(item, (dict, list)):
-                    prices.extend(self._extract_prices_from_json(item, depth + 1))
+            # Ищем массив номеров/тарифов в типичных ключах
+            for key in ("rooms", "rates", "room_groups", "results", "offers",
+                        "hotel_rates", "search_results", "data", "items"):
+                if key in data and isinstance(data[key], list):
+                    for item in data[key]:
+                        price = self._get_room_price(item)
+                        if price is not None:
+                            prices.append(price)
+                    if prices:
+                        return prices
+
+            # Fallback: рекурсивный поиск по всем спискам
+            for key, value in data.items():
+                if isinstance(value, list) and len(value) > 0:
+                    for item in value[:100]:
+                        if isinstance(item, dict):
+                            price = self._get_room_price(item)
+                            if price is not None:
+                                prices.append(price)
+                    if prices:
+                        return prices
 
         return prices
+
+    def _get_room_price(self, room: dict) -> Optional[int]:
+        """Извлекает цену из объекта номера/тарифа."""
+        if not isinstance(room, dict):
+            return None
+
+        # Приоритетные ключи для цены номера за ночь/проживание
+        price_keys = [
+            "payment_options.payment_types.0.amount",  # вложенный путь
+            "total_price", "daily_prices", "sell_price",
+            "price", "amount", "rate", "cost",
+            "min_price", "net_price", "gross_price",
+        ]
+
+        for key in price_keys:
+            if "." in key:
+                # Вложенный путь
+                val = self._get_nested(room, key)
+            else:
+                val = room.get(key)
+
+            if val is None:
+                continue
+
+            # Если это список цен (daily_prices), берём сумму или первый элемент
+            if isinstance(val, list):
+                if val and isinstance(val[0], (int, float)):
+                    price = int(sum(val)) if len(val) <= 30 else int(val[0])
+                    if 5000 <= price <= 1_000_000:
+                        return price
+                continue
+
+            if isinstance(val, (int, float)):
+                price = int(val)
+                if 5000 <= price <= 1_000_000:
+                    return price
+            elif isinstance(val, str):
+                p = self.parse_price_text(val)
+                if p is not None and 5000 <= p <= 1_000_000:
+                    return p
+
+        # Рекурсивный поиск в подобъектах номера
+        for key, value in room.items():
+            if isinstance(value, dict):
+                price = self._get_room_price(value)
+                if price is not None:
+                    return price
+
+        return None
+
+    @staticmethod
+    def _get_nested(data: dict, path: str):
+        """Получает значение по вложенному пути 'a.b.0.c'."""
+        current = data
+        for part in path.split("."):
+            if current is None:
+                return None
+            if isinstance(current, dict):
+                current = current.get(part)
+            elif isinstance(current, list):
+                try:
+                    current = current[int(part)]
+                except (IndexError, ValueError):
+                    return None
+            else:
+                return None
+        return current
 
     async def _extract_price(self, page: Page) -> ParseResult:
         """Не используется — Островок работает через перехват API."""
