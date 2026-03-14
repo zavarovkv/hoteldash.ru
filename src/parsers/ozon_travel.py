@@ -147,9 +147,22 @@ class OzonTravelParser(BaseParser):
         })
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url, wait_until="load", timeout=30000)
         except Exception as e:
             logger.warning("[%s] goto timeout: %s", self.source_name, type(e).__name__)
+
+        # Логируем заголовок страницы и URL после загрузки
+        title = await page.title()
+        final_url = page.url
+        logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, final_url[:120])
+
+        # Ждём — JS-челлендж может авторешиться через несколько секунд
+        await page.wait_for_timeout(5000)
+
+        title2 = await page.title()
+        final_url2 = page.url
+        if title2 != title or final_url2 != final_url:
+            logger.info("[%s] После ожидания: title='%s', url=%s", self.source_name, title2, final_url2[:120])
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
