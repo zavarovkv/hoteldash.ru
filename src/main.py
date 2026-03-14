@@ -82,6 +82,7 @@ async def _scrape_source_http(
                 nights=nights,
                 price=result.price,
                 currency="RUB",
+                url=url,
                 raw_price_text=result.raw_text[:100] if result.raw_text else None,
                 error=result.error,
             )
@@ -139,6 +140,7 @@ async def _scrape_source_browser(
                         nights=nights,
                         price=result.price,
                         currency="RUB",
+                        url=url,
                         raw_price_text=result.raw_text[:100] if result.raw_text else None,
                         error=result.error,
                     )

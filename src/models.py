@@ -45,6 +45,7 @@ class Price(Base):
     price = Column(Integer)
     currency = Column(String(3), default="RUB")
     scraped_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    url = Column(String(1000))
     raw_price_text = Column(String(100))
     error = Column(String(500))
 
