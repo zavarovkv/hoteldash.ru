@@ -34,6 +34,7 @@ class BaseParser(ABC):
     """Базовый класс для всех OTA-парсеров."""
 
     source_name: str = ""
+    needs_browser: bool = True
 
     async def scrape(self, page: Page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Загружает страницу и извлекает цену."""

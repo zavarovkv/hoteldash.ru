@@ -12,10 +12,6 @@ from src.config_loader import load_config, build_url, get_checkin_dates
 from src.db import get_session
 from src.models import Hotel, Price, ScrapeRun
 from src.parsers.ostrovok import OstrovokParser
-from src.parsers.tbank import TbankParser
-from src.parsers.onetwotrip import OneTwoTripParser
-from src.parsers.yandex_travel import YandexTravelParser
-from src.parsers.avito import AvitoParser
 from src.parsers.hotel_site import HotelSiteParser
 from src.utils.browser import create_browser, create_context
 from src.utils.antibot import delay_between_pages, delay_between_hotels, shuffle_items
@@ -30,10 +26,6 @@ logger = logging.getLogger(__name__)
 
 PARSERS = {
     "ostrovok": OstrovokParser,
-    "tbank": TbankParser,
-    "onetwotrip": OneTwoTripParser,
-    "yandex_travel": YandexTravelParser,
-    "avito": AvitoParser,
     "hotel_site": HotelSiteParser,
 }
 
@@ -55,29 +47,64 @@ def ensure_hotel_in_db(session, hotel_config) -> int:
     return hotel.id
 
 
-async def _scrape_source(
-    browser,
+async def _scrape_source_http(
+    parser,
     hotel_config,
     hotel_id: int,
     source_config,
     checkin_dates,
     adults: int,
 ) -> tuple[int, int, int]:
-    """Парсит один источник последовательно по всем датам.
+    """Парсит HTTP-источник (без браузера)."""
+    total = 0
+    ok = 0
+    fail = 0
+    nights = 1
 
-    Возвращает (total, successful, failed).
-    """
-    parser_class = PARSERS.get(source_config.name)
-    if not parser_class:
-        logger.warning("Нет парсера для источника: %s", source_config.name)
-        return 0, 0, 0
+    for checkin in checkin_dates:
+        checkout = checkin + timedelta(days=nights)
+        total += 1
 
-    parser = (
-        parser_class(widget=source_config.widget)
-        if source_config.name == "hotel_site"
-        else parser_class()
-    )
+        if source_config.has_dates:
+            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
+        else:
+            url = source_config.url_template
 
+        result = await parser.scrape_http(url, hotel_config.slug, checkin.isoformat())
+
+        with get_session() as session:
+            price_record = Price(
+                hotel_id=hotel_id,
+                source=source_config.name,
+                checkin_date=checkin,
+                nights=nights,
+                price=result.price,
+                currency="RUB",
+                raw_price_text=result.raw_text[:100] if result.raw_text else None,
+                error=result.error,
+            )
+            session.add(price_record)
+
+        if result.price is not None:
+            ok += 1
+        else:
+            fail += 1
+
+        await delay_between_pages()
+
+    return total, ok, fail
+
+
+async def _scrape_source_browser(
+    browser,
+    parser,
+    hotel_config,
+    hotel_id: int,
+    source_config,
+    checkin_dates,
+    adults: int,
+) -> tuple[int, int, int]:
+    """Парсит источник через Playwright (для SPA-сайтов)."""
     total = 0
     ok = 0
     fail = 0
@@ -180,14 +207,28 @@ async def run_scraping(
                         )
                         continue
 
-                # Запускаем все источники параллельно
-                tasks = [
-                    _scrape_source(
-                        browser, hotel_config, hotel_id,
-                        sc, checkin_dates, adults,
+                # Разделяем на HTTP и browser источники
+                tasks = []
+                for sc in sources:
+                    parser_class = PARSERS.get(sc.name)
+                    if not parser_class:
+                        logger.warning("Нет парсера для источника: %s", sc.name)
+                        continue
+                    parser = (
+                        parser_class(widget=sc.widget)
+                        if sc.name == "hotel_site"
+                        else parser_class()
                     )
-                    for sc in sources
-                ]
+                    if getattr(parser, "needs_browser", True):
+                        tasks.append(_scrape_source_browser(
+                            browser, parser, hotel_config, hotel_id,
+                            sc, checkin_dates, adults,
+                        ))
+                    else:
+                        tasks.append(_scrape_source_http(
+                            parser, hotel_config, hotel_id,
+                            sc, checkin_dates, adults,
+                        ))
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 for res in results:
