@@ -213,7 +213,8 @@ async def run_scraping(
                         continue
 
                 # Разделяем на HTTP и browser источники
-                tasks = []
+                http_tasks = []
+                browser_sources = []
                 for sc in sources:
                     parser_class = PARSERS.get(sc.name)
                     if not parser_class:
@@ -225,27 +226,42 @@ async def run_scraping(
                         else parser_class()
                     )
                     if getattr(parser, "needs_browser", True):
-                        tasks.append(_scrape_source_browser(
-                            browser, parser, hotel_config, hotel_id,
-                            sc, checkin_dates, adults, base_date,
-                        ))
+                        browser_sources.append((parser, sc))
                     else:
-                        tasks.append(_scrape_source_http(
+                        http_tasks.append(_scrape_source_http(
                             parser, hotel_config, hotel_id,
                             sc, checkin_dates, adults, base_date,
                         ))
-                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                for res in results:
-                    if isinstance(res, Exception):
-                        logger.error("Ошибка в источнике: %s", res)
-                        failed += 1
-                        total_tasks += 1
-                    else:
+                # HTTP-источники запускаем параллельно
+                if http_tasks:
+                    http_results = await asyncio.gather(*http_tasks, return_exceptions=True)
+                    for res in http_results:
+                        if isinstance(res, Exception):
+                            logger.error("Ошибка в HTTP-источнике: %s", res)
+                            failed += 1
+                            total_tasks += 1
+                        else:
+                            t, s, f = res
+                            total_tasks += t
+                            successful += s
+                            failed += f
+
+                # Browser-источники запускаем последовательно (один Chromium контекст)
+                for parser, sc in browser_sources:
+                    try:
+                        res = await _scrape_source_browser(
+                            browser, parser, hotel_config, hotel_id,
+                            sc, checkin_dates, adults, base_date,
+                        )
                         t, s, f = res
                         total_tasks += t
                         successful += s
                         failed += f
+                    except Exception as e:
+                        logger.error("Ошибка в browser-источнике %s: %s", sc.name, e)
+                        failed += 1
+                        total_tasks += 1
 
                 await delay_between_hotels()
 
