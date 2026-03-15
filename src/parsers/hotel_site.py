@@ -72,7 +72,7 @@ class HotelSiteParser(BaseParser):
     def _parse_availability(self, data: dict, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Извлекает минимальную цену из ответа TravelLine API."""
         prices = []
-        room_stays = data.get("data", {}).get("room_stays", [])
+        room_stays = data.get("room_stays", []) or data.get("data", {}).get("room_stays", [])
 
         for rs in room_stays:
             total = rs.get("total", {})
