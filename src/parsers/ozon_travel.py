@@ -1,16 +1,15 @@
-"""Парсер Ozon Travel — перехват API-ответов через Playwright."""
+"""Парсер Ozon Travel — перехват API-ответов через Camoufox."""
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Optional
 
 from playwright.async_api import Page, Response
-from playwright_stealth import Stealth
 
 from src.parsers.base import BaseParser, ParseResult
+from src.utils.browser import _parse_proxy_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ _API_POLL_INTERVAL_MS = 500
 class OzonTravelParser(BaseParser):
     source_name = "ozon_travel"
     needs_browser = True
-    use_headed = True
+    use_camoufox = True
 
     @property
     def proxy_url(self) -> Optional[str]:
@@ -39,13 +38,11 @@ class OzonTravelParser(BaseParser):
 
                 resp_url = response.url
 
-                # Пропускаем статику
                 skip = (".js", ".css", ".png", ".jpg", ".svg", ".woff", ".ico",
                         ".gif", ".webp", ".ttf", ".eot")
                 if any(resp_url.endswith(s) or (s + "?") in resp_url for s in skip):
                     return
 
-                # Логируем все ответы для диагностики
                 logger.info(
                     "[%s] RESP %d %s (type=%s)",
                     self.source_name, response.status, resp_url[:120],
@@ -74,32 +71,16 @@ class OzonTravelParser(BaseParser):
 
         page.on("response", on_response)
 
-        stealth = Stealth(
-            navigator_languages_override=("ru-RU", "ru"),
-            navigator_platform_override="Linux x86_64",
-        )
-        await stealth.apply_stealth_async(page)
-
         logger.info(
             "[%s] %s | checkin=%s",
             self.source_name, hotel_slug, checkin_date,
         )
-
-        # Прогрев сессии — заходим на главную, принимаем куки
-        try:
-            await page.goto("https://www.ozon.ru/", wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)
-            warmup_title = await page.title()
-            logger.info("[%s] Warmup: title='%s'", self.source_name, warmup_title)
-        except Exception as e:
-            logger.warning("[%s] Warmup error: %s", self.source_name, str(e)[:200])
 
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
             logger.warning("[%s] goto error: %s: %s", self.source_name, type(e).__name__, str(e)[:200])
 
-        # Даём странице устояться после редиректов
         await page.wait_for_timeout(3000)
 
         try:
@@ -128,6 +109,27 @@ class OzonTravelParser(BaseParser):
             )
 
         return ParseResult(price=None, raw_text=None, error="no prices in API responses")
+
+    async def scrape_with_own_browser(self, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
+        """Запускает Camoufox и парсит страницу."""
+        from camoufox.async_api import AsyncCamoufox
+
+        proxy_raw = self.proxy_url
+        proxy_config = _parse_proxy_url(proxy_raw) if proxy_raw else None
+
+        logger.info("[%s] Camoufox headless + proxy: %s", self.source_name,
+                     proxy_raw.split("@")[-1] if proxy_raw else "нет")
+
+        async with AsyncCamoufox(
+            headless=True,
+            proxy=proxy_config,
+            os="linux",
+        ) as browser:
+            page = await browser.new_page()
+            try:
+                return await self.scrape(page, url, hotel_slug, checkin_date)
+            finally:
+                await page.close()
 
     def _extract_prices(self, data) -> list[int]:
         """Извлекает цены из JSON-ответа Ozon Travel API."""

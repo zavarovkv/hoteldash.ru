@@ -112,6 +112,63 @@ async def _scrape_source(
     return total, ok, fail
 
 
+async def _scrape_source_camoufox(
+    parser,
+    hotel_config,
+    hotel_id: int,
+    source_config,
+    checkin_dates,
+    adults: int,
+    base_date: date,
+) -> tuple[int, int, int]:
+    """Парсит источник через Camoufox (собственный браузер парсера)."""
+    total = 0
+    ok = 0
+    fail = 0
+    nights = 1
+
+    for checkin in checkin_dates:
+        checkout = checkin + timedelta(days=nights)
+        total += 1
+
+        if source_config.has_dates:
+            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
+        else:
+            url = source_config.url_template
+
+        try:
+            result = await parser.scrape_with_own_browser(
+                url, hotel_config.slug, checkin.isoformat()
+            )
+
+            with get_session() as session:
+                price_record = Price(
+                    hotel_id=hotel_id,
+                    source=source_config.name,
+                    checkin_date=checkin,
+                    checkin_offset_days=(checkin - base_date).days,
+                    nights=nights,
+                    price=result.price,
+                    currency="RUB",
+                    url=url,
+                    raw_price_text=result.raw_text[:100] if result.raw_text else None,
+                    error=result.error,
+                )
+                session.add(price_record)
+
+            if result.price is not None:
+                ok += 1
+            else:
+                fail += 1
+        except Exception as e:
+            logger.error("Ошибка Camoufox %s: %s", source_config.name, e)
+            fail += 1
+
+        await delay_between_pages()
+
+    return total, ok, fail
+
+
 async def run_scraping(
     hotel_slug: Optional[str] = None,
     source_filter: Optional[str] = None,
@@ -175,11 +232,17 @@ async def run_scraping(
                     )
 
                     try:
-                        proxy = getattr(parser, "proxy_url", None)
-                        if proxy:
-                            # Источник с прокси — отдельный браузер
+                        use_camoufox = getattr(parser, "use_camoufox", False)
+                        if use_camoufox:
+                            # Camoufox — парсер управляет своим браузером
+                            t, s, f = await _scrape_source_camoufox(
+                                parser, hotel_config, hotel_id,
+                                sc, checkin_dates, adults, base_date,
+                            )
+                        elif getattr(parser, "proxy_url", None):
+                            # Источник с прокси — отдельный Playwright браузер
                             headed = getattr(parser, "use_headed", False)
-                            async with create_browser(proxy_url=proxy, headed=headed) as proxy_browser:
+                            async with create_browser(proxy_url=parser.proxy_url, headed=headed) as proxy_browser:
                                 t, s, f = await _scrape_source(
                                     proxy_browser, parser, hotel_config, hotel_id,
                                     sc, checkin_dates, adults, base_date,

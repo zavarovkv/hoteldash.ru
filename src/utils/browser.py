@@ -46,22 +46,18 @@ def _parse_proxy_url(raw: str) -> dict:
 
 
 @asynccontextmanager
-async def create_browser(proxy_url: Optional[str] = None, headed: bool = False):
-    """Создаёт и возвращает браузер Playwright."""
+async def create_browser(proxy_url: Optional[str] = None):
+    """Создаёт и возвращает headless Playwright Chromium."""
     async with async_playwright() as p:
         effective_proxy = proxy_url or os.getenv("PROXY_URL")
 
         launch_args = {
-            "headless": not headed,
+            "headless": True,
             "args": [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
             ],
         }
-
-        if headed:
-            launch_args["channel"] = "chrome"
-            logger.info("Google Chrome в headed mode (требуется DISPLAY)")
 
         if effective_proxy:
             launch_args["proxy"] = _parse_proxy_url(effective_proxy)
