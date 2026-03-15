@@ -16,6 +16,14 @@ hotels:
       otello:
         url_template: "https://otello.ru/hotel/4504127908386113?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
 
+  - slug: "radisson-collection-moscow"
+    name: "Radisson Collection Москва"
+    city: "Москва"
+    stars: 5
+    sources:
+      otello:
+        url_template: "https://otello.ru/hotel/4504127908393745?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
+
 
 schedule:
   checkin_offsets_days: [3]
