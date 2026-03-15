@@ -17,9 +17,7 @@ _API_URL = "https://ru-ibe.tlintegration.ru/ApiWebDistribution/BookingForm/hotel
 
 class HotelSiteParser(BaseParser):
     source_name = "hotel_site"
-
-    def __init__(self, **kwargs):
-        pass
+    needs_browser = False
 
     async def scrape(self, page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Вызывает TravelLine API напрямую — браузер не используется."""

@@ -54,6 +54,30 @@ def ensure_hotel_in_db(session, hotel_config) -> int:
     return hotel.id
 
 
+def _save_price(hotel_id, source_name, checkin, base_date, nights, result, url):
+    """Сохраняет результат парсинга в БД."""
+    with get_session() as session:
+        session.add(Price(
+            hotel_id=hotel_id,
+            source=source_name,
+            checkin_date=checkin,
+            checkin_offset_days=(checkin - base_date).days,
+            nights=nights,
+            price=result.price,
+            currency="RUB",
+            url=url,
+            raw_price_text=result.raw_text[:100] if result.raw_text else None,
+            error=result.error,
+        ))
+
+
+def _make_url(source_config, checkin, checkout, nights, adults):
+    """Строит URL из шаблона с подстановкой дат."""
+    if source_config.has_dates:
+        return build_url(source_config.url_template, checkin, checkout, nights, adults)
+    return source_config.url_template
+
+
 async def _scrape_source(
     browser,
     parser,
@@ -65,9 +89,7 @@ async def _scrape_source(
     base_date: date,
 ) -> tuple[int, int, int]:
     """Парсит источник через Playwright."""
-    total = 0
-    ok = 0
-    fail = 0
+    total = ok = fail = 0
     nights = 1
 
     context = await create_context(browser)
@@ -75,32 +97,14 @@ async def _scrape_source(
         for checkin in checkin_dates:
             checkout = checkin + timedelta(days=nights)
             total += 1
+            url = _make_url(source_config, checkin, checkout, nights, adults)
 
             page = await context.new_page()
             try:
-                if source_config.has_dates:
-                    url = build_url(source_config.url_template, checkin, checkout, nights, adults)
-                else:
-                    url = source_config.url_template
-
                 result = await parser.scrape(
                     page, url, hotel_config.slug, checkin.isoformat()
                 )
-
-                with get_session() as session:
-                    price_record = Price(
-                        hotel_id=hotel_id,
-                        source=source_config.name,
-                        checkin_date=checkin,
-                        checkin_offset_days=(checkin - base_date).days,
-                        nights=nights,
-                        price=result.price,
-                        currency="RUB",
-                        url=url,
-                        raw_price_text=result.raw_text[:100] if result.raw_text else None,
-                        error=result.error,
-                    )
-                    session.add(price_record)
+                _save_price(hotel_id, source_config.name, checkin, base_date, nights, result, url)
 
                 if result.price is not None:
                     ok += 1
@@ -126,39 +130,19 @@ async def _scrape_source_camoufox(
     base_date: date,
 ) -> tuple[int, int, int]:
     """Парсит источник через Camoufox (собственный браузер парсера)."""
-    total = 0
-    ok = 0
-    fail = 0
+    total = ok = fail = 0
     nights = 1
 
     for checkin in checkin_dates:
         checkout = checkin + timedelta(days=nights)
         total += 1
-
-        if source_config.has_dates:
-            url = build_url(source_config.url_template, checkin, checkout, nights, adults)
-        else:
-            url = source_config.url_template
+        url = _make_url(source_config, checkin, checkout, nights, adults)
 
         try:
             result = await parser.scrape_with_own_browser(
                 url, hotel_config.slug, checkin.isoformat()
             )
-
-            with get_session() as session:
-                price_record = Price(
-                    hotel_id=hotel_id,
-                    source=source_config.name,
-                    checkin_date=checkin,
-                    checkin_offset_days=(checkin - base_date).days,
-                    nights=nights,
-                    price=result.price,
-                    currency="RUB",
-                    url=url,
-                    raw_price_text=result.raw_text[:100] if result.raw_text else None,
-                    error=result.error,
-                )
-                session.add(price_record)
+            _save_price(hotel_id, source_config.name, checkin, base_date, nights, result, url)
 
             if result.price is not None:
                 ok += 1
@@ -172,6 +156,41 @@ async def _scrape_source_camoufox(
         if total < len(checkin_dates):
             logger.info("Camoufox пауза 90с для ротации IP...")
             await asyncio.sleep(90)
+
+    return total, ok, fail
+
+
+async def _scrape_source_api(
+    parser,
+    hotel_config,
+    hotel_id: int,
+    source_config,
+    checkin_dates,
+    adults: int,
+    base_date: date,
+) -> tuple[int, int, int]:
+    """Парсит источник через прямой API (без браузера)."""
+    total = ok = fail = 0
+    nights = 1
+
+    for checkin in checkin_dates:
+        checkout = checkin + timedelta(days=nights)
+        total += 1
+        url = _make_url(source_config, checkin, checkout, nights, adults)
+
+        try:
+            result = await parser.scrape(
+                None, url, hotel_config.slug, checkin.isoformat()
+            )
+            _save_price(hotel_id, source_config.name, checkin, base_date, nights, result, url)
+
+            if result.price is not None:
+                ok += 1
+            else:
+                fail += 1
+        except Exception as e:
+            logger.error("Ошибка API %s: %s", source_config.name, e)
+            fail += 1
 
     return total, ok, fail
 
@@ -235,8 +254,16 @@ async def run_scraping(
                     parser = parser_class()
 
                     try:
+                        needs_browser = getattr(parser, "needs_browser", True)
                         use_camoufox = getattr(parser, "use_camoufox", False)
-                        if use_camoufox:
+
+                        if not needs_browser:
+                            # API-парсер — браузер не нужен
+                            t, s, f = await _scrape_source_api(
+                                parser, hotel_config, hotel_id,
+                                sc, checkin_dates, adults, base_date,
+                            )
+                        elif use_camoufox:
                             # Camoufox — парсер управляет своим браузером
                             t, s, f = await _scrape_source_camoufox(
                                 parser, hotel_config, hotel_id,
@@ -255,6 +282,7 @@ async def run_scraping(
                                 browser, parser, hotel_config, hotel_id,
                                 sc, checkin_dates, adults, base_date,
                             )
+
                         total_tasks += t
                         successful += s
                         failed += f
