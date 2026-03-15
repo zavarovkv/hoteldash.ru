@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date as date_type, timedelta
-from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
 import httpx
@@ -19,8 +18,8 @@ _API_URL = "https://ru-ibe.tlintegration.ru/ApiWebDistribution/BookingForm/hotel
 class HotelSiteParser(BaseParser):
     source_name = "hotel_site"
 
-    def __init__(self, widget: Optional[str] = None):
-        self.widget = widget
+    def __init__(self, **kwargs):
+        pass
 
     async def scrape(self, page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Вызывает TravelLine API напрямую — браузер не используется."""

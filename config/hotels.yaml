@@ -9,9 +9,7 @@ hotels:
       ozon_travel:
         url_template: "https://www.ozon.ru/travel/hotels/product/613318873/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
       hotel_site:
-        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=6315&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
-        has_dates: true
-        widget: travelline
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=6315&adults={adults}"
       yandex_travel:
         url_template: "https://travel.yandex.ru/hotels/moscow/metropol-otel-moskva/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
       otello:
@@ -27,9 +25,7 @@ hotels:
       ozon_travel:
         url_template: "https://www.ozon.ru/travel/hotels/product/612656495/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
       hotel_site:
-        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=17489&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
-        has_dates: true
-        widget: travelline
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=17489&adults={adults}"
       yandex_travel:
         url_template: "https://travel.yandex.ru/hotels/moscow/radisson-collection-hotel-moscow/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
       otello:
@@ -45,9 +41,7 @@ hotels:
       ozon_travel:
         url_template: "https://www.ozon.ru/travel/hotels/product/904835382/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
       hotel_site:
-        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=24809&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
-        has_dates: true
-        widget: travelline
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=24809&adults={adults}"
       yandex_travel:
         url_template: "https://travel.yandex.ru/hotels/moscow/lotte-otel-moskva/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
       otello:

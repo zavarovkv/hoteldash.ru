@@ -232,11 +232,7 @@ async def run_scraping(
                         logger.warning("Нет парсера для источника: %s", sc.name)
                         continue
 
-                    parser = (
-                        parser_class(widget=sc.widget)
-                        if sc.name == "hotel_site"
-                        else parser_class()
-                    )
+                    parser = parser_class()
 
                     try:
                         use_camoufox = getattr(parser, "use_camoufox", False)
