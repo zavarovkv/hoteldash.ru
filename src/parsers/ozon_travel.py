@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import random
 import re
 from typing import Optional
 
-from playwright.async_api import Page, Response
+from playwright.async_api import Page
 
 from src.parsers.base import BaseParser, ParseResult
 from src.utils.browser import _parse_proxy_url
@@ -33,46 +32,7 @@ class OzonTravelParser(BaseParser):
         return os.getenv("OZON_PROXY_URL")
 
     async def scrape(self, page: Page, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
-        """Перехватывает API-ответы с ценами."""
-        captured_prices: list[int] = []
-        async def on_response(response: Response):
-            try:
-                content_type = response.headers.get("content-type", "")
-                if response.status != 200 or "json" not in content_type:
-                    return
-
-                resp_url = response.url
-
-                skip = (".js", ".css", ".png", ".jpg", ".svg", ".woff", ".ico",
-                        ".gif", ".webp", ".ttf", ".eot")
-                if any(resp_url.endswith(s) or (s + "?") in resp_url for s in skip):
-                    return
-
-                body = await response.json()
-
-                # Извлекаем цены из widgetStates (stringified JSON)
-                if "entrypoint-api.bx/page/json" in resp_url and isinstance(body, dict):
-                    ws_prices = self._extract_from_widget_states(body)
-                    if ws_prices:
-                        logger.info(
-                            "[%s] widgetStates → %d цен найдено",
-                            self.source_name, len(ws_prices),
-                        )
-                        captured_prices.extend(ws_prices)
-
-                # Стандартный рекурсивный поиск
-                prices = self._extract_prices(body)
-                if prices:
-                    logger.info(
-                        "[%s] API %s → %d цен найдено",
-                        self.source_name, resp_url[:100], len(prices),
-                    )
-                    captured_prices.extend(prices)
-
-            except Exception:
-                pass
-
-        page.on("response", on_response)
+        """Загружает страницу и извлекает цену из DOM."""
 
         # Блокируем тяжёлые ресурсы для экономии трафика прокси
         async def block_heavy(route):
@@ -110,26 +70,55 @@ class OzonTravelParser(BaseParser):
             await page.evaluate("window.scrollBy(0, 500)")
             await page.wait_for_timeout(1000)
 
-        # Поллинг — ждём API-ответ с ценами (обычно приходит из widgetStates)
-        waited = 0
-        while not captured_prices and waited < _API_WAIT_MAX_MS:
-            await page.wait_for_timeout(_API_POLL_INTERVAL_MS)
-            waited += _API_POLL_INTERVAL_MS
+        # Ждём рендеринг цен
+        await page.wait_for_timeout(5000)
 
-        if captured_prices:
-            min_price = min(captured_prices)
+        # Извлекаем цену из DOM — ищем первый элемент с ₽
+        return await self._extract_price_from_dom(page, hotel_slug, checkin_date)
+
+    async def _extract_price_from_dom(self, page: Page, hotel_slug: str, checkin_date: str) -> ParseResult:
+        """Извлекает минимальную цену из DOM (текст с ₽)."""
+        js = """() => {
+            const ruble = String.fromCharCode(0x20BD);
+            const results = [];
+            const walker = document.createTreeWalker(
+                document.body, NodeFilter.SHOW_TEXT, null, false
+            );
+            while (walker.nextNode()) {
+                const text = walker.currentNode.textContent.trim();
+                if (text && text.includes(ruble) && /[0-9]/.test(text) && text.length < 60) {
+                    results.push(text);
+                }
+            }
+            return results.slice(0, 30);
+        }"""
+        try:
+            price_texts = await page.evaluate(js)
+        except Exception as e:
+            logger.warning("[%s] Не удалось извлечь цены из DOM: %s", self.source_name, e)
+            return ParseResult(price=None, raw_text=None, error="DOM extraction failed")
+
+        prices = []
+        for text in price_texts:
+            cleaned = re.sub(r"[^\d]", "", text)
+            if cleaned:
+                try:
+                    price = int(cleaned)
+                    if 5000 <= price <= 1_000_000:
+                        prices.append(price)
+                except (ValueError, OverflowError):
+                    pass
+
+        if prices:
+            min_price = min(prices)
             logger.info(
-                "[%s] %s | %s | мін. цена: %d руб. (из %d вариантов)",
+                "[%s] %s | %s | мін. цена (DOM): %d руб. (из %d)",
                 self.source_name, hotel_slug, checkin_date,
-                min_price, len(captured_prices),
+                min_price, len(prices),
             )
-            return ParseResult(
-                price=min_price,
-                raw_text=f"{min_price} ₽",
-                error=None,
-            )
+            return ParseResult(price=min_price, raw_text=f"{min_price} ₽", error=None)
 
-        return ParseResult(price=None, raw_text=None, error="no prices in API responses")
+        return ParseResult(price=None, raw_text=None, error="no prices in DOM")
 
     async def scrape_with_own_browser(self, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
         """Запускает Camoufox и парсит с retry при капче."""
@@ -203,87 +192,6 @@ class OzonTravelParser(BaseParser):
             finally:
                 await page.close()
 
-    def _extract_from_widget_states(self, body: dict) -> list[int]:
-        """Парсит widgetStates — значения являются stringified JSON."""
-        prices = []
-        widget_states = body.get("widgetStates")
-        if not isinstance(widget_states, dict):
-            return prices
-
-        for widget_key, widget_val in widget_states.items():
-            if not isinstance(widget_val, str):
-                continue
-            # Только виджеты, связанные с отелями/номерами/тарифами
-            key_lower = widget_key.lower()
-            if not any(k in key_lower for k in ("hotel", "room", "tariff", "price", "travel")):
-                continue
-            try:
-                parsed = json.loads(widget_val)
-                self._find_prices_recursive(parsed, prices, depth=0)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return prices
-
-    def _extract_prices(self, data) -> list[int]:
-        """Извлекает цены из JSON-ответа Ozon Travel API."""
-        prices = []
-        self._find_prices_recursive(data, prices, depth=0)
-        return prices
-
-    def _find_prices_recursive(self, obj, prices: list[int], depth: int):
-        """Рекурсивно ищет цены в JSON-структуре."""
-        if depth > 15 or len(prices) > 200:
-            return
-
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                key_lower = key.lower()
-                if any(k in key_lower for k in ("price", "amount", "cost", "total")):
-                    p = self._try_parse_price(value)
-                    if p is not None:
-                        prices.append(p)
-
-                # Пробуем распарсить stringified JSON в значениях
-                if isinstance(value, str) and len(value) > 10 and value.startswith(("{", "[")):
-                    try:
-                        parsed = json.loads(value)
-                        self._find_prices_recursive(parsed, prices, depth + 1)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-            for value in obj.values():
-                if isinstance(value, (dict, list)):
-                    self._find_prices_recursive(value, prices, depth + 1)
-
-        elif isinstance(obj, list):
-            for item in obj[:50]:
-                if isinstance(item, (dict, list)):
-                    self._find_prices_recursive(item, prices, depth + 1)
-
-    @staticmethod
-    def _try_parse_price(val) -> Optional[int]:
-        """Пробует извлечь цену из значения."""
-        if val is None:
-            return None
-        try:
-            price = int(float(val))
-            if 5000 <= price <= 1_000_000:
-                return price
-        except (ValueError, TypeError, OverflowError):
-            pass
-        # Пробуем строку с пробелами/символами: "26 100 ₽"
-        if isinstance(val, str):
-            cleaned = re.sub(r"[^\d]", "", val)
-            if cleaned:
-                try:
-                    price = int(cleaned)
-                    if 5000 <= price <= 1_000_000:
-                        return price
-                except (ValueError, OverflowError):
-                    pass
-        return None
-
     async def _extract_price(self, page: Page) -> ParseResult:
-        """Не используется — Ozon работает через перехват API."""
+        """Не используется — Ozon работает через scrape override."""
         return ParseResult(price=None, raw_text=None, error="use scrape override")
