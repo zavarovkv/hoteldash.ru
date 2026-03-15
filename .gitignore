@@ -1,4 +1,5 @@
 .env
+config/hotels.yaml
 __pycache__/
 *.pyc
 *.pyo
@@ -10,3 +11,4 @@ nginx/certbot/
 *.log
 .idea/
 .vscode/
+.claude/

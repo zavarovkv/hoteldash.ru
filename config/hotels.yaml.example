@@ -1,0 +1,29 @@
+hotels:
+  - slug: "example-hotel"
+    name: "Example Hotel"
+    city: "Москва"
+    stars: 5
+    sources:
+      ostrovok:
+        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid0000000/example_hotel/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
+      ozon_travel:
+        url_template: "https://www.ozon.ru/travel/hotels/product/000000000/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
+      hotel_site:
+        # providerId — ID отеля в системе TravelLine (цены через прямой API)
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=00000&adults={adults}"
+      yandex_travel:
+        url_template: "https://travel.yandex.ru/hotels/moscow/example-hotel/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
+      otello:
+        url_template: "https://otello.ru/hotel/0000000000000000?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
+
+# Плейсхолдеры в url_template:
+#   {checkin}      — дата заезда (2026-03-18)
+#   {checkout}     — дата выезда (2026-03-19)
+#   {checkin_dot}  — дата заезда (18.03.2026)
+#   {checkout_dot} — дата выезда (19.03.2026)
+#   {nights}       — количество ночей
+#   {adults}       — количество взрослых
+
+schedule:
+  checkin_offsets_days: [3, 7, 14]  # дней от сегодня
+  adults: 2
