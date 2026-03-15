@@ -26,18 +26,18 @@ class HotelSiteParser(BaseParser):
             await page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
-        await page.wait_for_timeout(5000)
+        await page.wait_for_timeout(3000)
 
-        # Находим элемент "Найти" (TravelLine использует <span>, не <button>)
+        # Нажимаем "Найти" для запуска поиска номеров
         try:
             search_el = page.get_by_text("Найти", exact=True)
-            await search_el.click(timeout=15000)
+            await search_el.click(timeout=10000)
             logger.info("[%s] Кнопка 'Найти' нажата", self.source_name)
         except Exception as e:
             logger.warning("[%s] Не удалось нажать 'Найти': %s", self.source_name, e)
 
         # Ждём загрузку результатов
-        await page.wait_for_timeout(15000)
+        await page.wait_for_timeout(10000)
 
         # Ищем цены через locator (пронизывает Shadow DOM)
         price_locators = [

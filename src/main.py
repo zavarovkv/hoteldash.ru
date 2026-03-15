@@ -164,7 +164,10 @@ async def _scrape_source_camoufox(
             logger.error("Ошибка Camoufox %s: %s", source_config.name, e)
             fail += 1
 
-        await delay_between_pages()
+        # Пауза между датами для ротации IP прокси
+        if total < len(checkin_dates):
+            logger.info("Camoufox пауза 90с для ротации IP...")
+            await asyncio.sleep(90)
 
     return total, ok, fail
 
