@@ -3,7 +3,6 @@ hotels:
     name: "Метрополь Москва"
     city: "Москва"
     stars: 5
-    website: "https://metropol-moscow.ru"
     sources:
       ostrovok:
         url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7595994/metropol_hotel/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
@@ -35,6 +34,24 @@ hotels:
         url_template: "https://travel.yandex.ru/hotels/moscow/radisson-collection-hotel-moscow/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
       otello:
         url_template: "https://otello.ru/hotel/4504127908393745?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
+
+  - slug: "lotte-moscow"
+    name: "Lotte Hotel Москва"
+    city: "Москва"
+    stars: 5
+    sources:
+      ostrovok:
+        url_template: "https://ostrovok.ru/hotel/russia/moscow/mid7382812/lotte_otel_moskva/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
+      ozon_travel:
+        url_template: "https://www.ozon.ru/travel/hotels/product/904835382/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
+      hotel_site:
+        url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=24809&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
+        has_dates: true
+        widget: travelline
+      yandex_travel:
+        url_template: "https://travel.yandex.ru/hotels/moscow/lotte-otel-moskva/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
+      otello:
+        url_template: "https://otello.ru/hotel/4504127908892722?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
 
 
 schedule:
