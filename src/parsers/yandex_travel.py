@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 from typing import Optional
 
 from playwright.async_api import Page
@@ -179,6 +180,18 @@ class YandexTravelParser(BaseParser):
                     price = self.parse_price_text(text)
                     if price is not None:
                         return ParseResult(price=price, raw_text=text, error=None)
+        except Exception:
+            pass
+
+        # Фоллбэк: цена из title ("... от 33110 ₽ — Яндекс Путешествия")
+        try:
+            title = await page.title()
+            match = re.search(r"от\s+([\d\s]+)\s*₽", title)
+            if match:
+                price = self.parse_price_text(match.group(1) + " ₽")
+                if price is not None:
+                    logger.info("[%s] Цена из title: %d руб.", self.source_name, price)
+                    return ParseResult(price=price, raw_text=title, error=None)
         except Exception:
             pass
 
