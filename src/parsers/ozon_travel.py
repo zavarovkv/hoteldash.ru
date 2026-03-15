@@ -63,11 +63,12 @@ class OzonTravelParser(BaseParser):
                     )
 
                 # Дамп структуры для отладки ценового API
-                if "hotelsFetchRoomTariffs" in resp_url or "summary" in resp_url:
+                if any(k in resp_url for k in ("hotelsFetchRoomTariffs", "summary", "entrypoint-api.bx/page/json")):
+                    dump = json.dumps(body, ensure_ascii=False, indent=2)
                     logger.info(
-                        "[%s] DUMP %s:\n%s",
+                        "[%s] DUMP %s (%d bytes):\n%s",
                         self.source_name, resp_url.split("/")[-1][:50],
-                        json.dumps(body, ensure_ascii=False, indent=2)[:3000],
+                        len(dump), dump[:5000],
                     )
 
                 prices = self._extract_prices(body)
@@ -105,6 +106,11 @@ class OzonTravelParser(BaseParser):
         # Детекция капчи/блокировки
         if title and ("captcha" in title.lower() or "доступ ограничен" in title.lower()):
             return ParseResult(price=None, raw_text=None, error=f"captcha: {title}")
+
+        # Скролл для загрузки тарифов
+        for _ in range(3):
+            await page.evaluate("window.scrollBy(0, 500)")
+            await page.wait_for_timeout(1000)
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
