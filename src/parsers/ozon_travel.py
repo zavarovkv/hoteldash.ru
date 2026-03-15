@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Optional
@@ -56,6 +57,14 @@ class OzonTravelParser(BaseParser):
                         "[%s] JSON %s → ключи: %s",
                         self.source_name, resp_url[:100],
                         list(body.keys())[:15],
+                    )
+
+                # Дамп структуры для отладки ценового API
+                if "hotelsFetchRoomTariffs" in resp_url or "summary" in resp_url:
+                    logger.info(
+                        "[%s] DUMP %s:\n%s",
+                        self.source_name, resp_url.split("/")[-1][:50],
+                        json.dumps(body, ensure_ascii=False, indent=2)[:3000],
                     )
 
                 prices = self._extract_prices(body)
@@ -123,6 +132,7 @@ class OzonTravelParser(BaseParser):
         async with AsyncCamoufox(
             headless=True,
             proxy=proxy_config,
+            geoip=True,
             os="linux",
         ) as browser:
             page = await browser.new_page()
