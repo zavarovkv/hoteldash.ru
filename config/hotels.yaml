@@ -23,6 +23,8 @@ hotels:
     sources:
       ostrovok:
         url_template: "https://ostrovok.ru/hotel/russia/moscow/mid8876782/radisson_collection_hotel_moscow/?dates={checkin_dot}-{checkout_dot}&guests={adults}&search=yes"
+      ozon_travel:
+        url_template: "https://www.ozon.ru/travel/hotels/product/612656495/?Dlts={adults}&checkIn={checkin}&checkOut={checkout}"
       otello:
         url_template: "https://otello.ru/hotel/4504127908393745?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
 
