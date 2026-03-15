@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from playwright.async_api import async_playwright, Browser, BrowserContext
-from playwright_stealth import stealth_async
 from fake_useragent import UserAgent
 
 from config.settings import (

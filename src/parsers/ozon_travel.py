@@ -8,7 +8,7 @@ import os
 from typing import Optional
 
 from playwright.async_api import Page, Response
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 
 from src.parsers.base import BaseParser, ParseResult
 
@@ -74,7 +74,11 @@ class OzonTravelParser(BaseParser):
 
         page.on("response", on_response)
 
-        await stealth_async(page)
+        stealth = Stealth(
+            navigator_languages_override=("ru-RU", "ru"),
+            navigator_platform_override="Linux x86_64",
+        )
+        await stealth.apply_stealth_async(page)
 
         logger.info(
             "[%s] %s | checkin=%s",
