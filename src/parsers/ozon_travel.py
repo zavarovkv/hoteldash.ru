@@ -132,7 +132,6 @@ class OzonTravelParser(BaseParser):
         async with AsyncCamoufox(
             headless=True,
             proxy=proxy_config,
-            geoip=True,
             os="linux",
         ) as browser:
             page = await browser.new_page()
