@@ -22,6 +22,12 @@ jobs:
 
             git pull origin master
 
+            # hotels.yaml не в git — если нет, копируем из example
+            if [ ! -f config/hotels.yaml ]; then
+              cp config/hotels.yaml.example config/hotels.yaml
+              echo "WARNING: config/hotels.yaml created from example — edit it!"
+            fi
+
             # Пересобираем образ приложения
             docker compose build --quiet app
 
