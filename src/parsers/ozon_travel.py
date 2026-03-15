@@ -85,6 +85,15 @@ class OzonTravelParser(BaseParser):
             self.source_name, hotel_slug, checkin_date,
         )
 
+        # Прогрев сессии — заходим на главную, принимаем куки
+        try:
+            await page.goto("https://www.ozon.ru/", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
+            warmup_title = await page.title()
+            logger.info("[%s] Warmup: title='%s'", self.source_name, warmup_title)
+        except Exception as e:
+            logger.warning("[%s] Warmup error: %s", self.source_name, str(e)[:200])
+
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
