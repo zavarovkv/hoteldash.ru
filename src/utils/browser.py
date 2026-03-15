@@ -60,7 +60,8 @@ async def create_browser(proxy_url: Optional[str] = None, headed: bool = False):
         }
 
         if headed:
-            logger.info("Chromium в headed mode (требуется DISPLAY/xvfb-run)")
+            launch_args["channel"] = "chrome"
+            logger.info("Google Chrome в headed mode (требуется DISPLAY)")
 
         if effective_proxy:
             launch_args["proxy"] = _parse_proxy_url(effective_proxy)
