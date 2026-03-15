@@ -262,6 +262,12 @@ async def run_scraping(
                         total_tasks += t
                         successful += s
                         failed += f
+
+                        # Пауза после Camoufox-источника для ротации IP прокси
+                        if use_camoufox:
+                            logger.info("Пауза 90с между Camoufox-источниками для ротации IP...")
+                            await asyncio.sleep(90)
+
                     except Exception as e:
                         logger.error("Ошибка в источнике %s: %s", sc.name, e)
                         failed += 1
