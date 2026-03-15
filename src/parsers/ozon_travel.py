@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 _API_WAIT_MAX_MS = 30_000
 _API_POLL_INTERVAL_MS = 500
+_MAX_RETRIES = 3
+_RETRY_DELAY_SEC = 95
 
 
 class OzonTravelParser(BaseParser):
@@ -96,7 +99,12 @@ class OzonTravelParser(BaseParser):
             title = await page.title()
             logger.info("[%s] Страница: title='%s', url=%s", self.source_name, title, page.url[:120])
         except Exception:
+            title = ""
             logger.warning("[%s] Не удалось получить title, url=%s", self.source_name, page.url[:120])
+
+        # Детекция капчи/блокировки
+        if title and ("captcha" in title.lower() or "доступ ограничен" in title.lower()):
+            return ParseResult(price=None, raw_text=None, error=f"captcha: {title}")
 
         # Поллинг — ждём API-ответ с ценами
         waited = 0
@@ -120,7 +128,28 @@ class OzonTravelParser(BaseParser):
         return ParseResult(price=None, raw_text=None, error="no prices in API responses")
 
     async def scrape_with_own_browser(self, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
-        """Запускает Camoufox и парсит страницу."""
+        """Запускает Camoufox и парсит с retry при капче."""
+        for attempt in range(1, _MAX_RETRIES + 1):
+            result = await self._try_scrape(url, hotel_slug, checkin_date)
+            if result.price is not None:
+                return result
+
+            # Проверяем — капча или просто нет цен
+            is_captcha = result.error and "captcha" in result.error.lower()
+            if not is_captcha:
+                return result
+
+            if attempt < _MAX_RETRIES:
+                logger.info(
+                    "[%s] Капча, retry %d/%d через %dс (ждём новый IP)...",
+                    self.source_name, attempt, _MAX_RETRIES, _RETRY_DELAY_SEC,
+                )
+                await asyncio.sleep(_RETRY_DELAY_SEC)
+
+        return result
+
+    async def _try_scrape(self, url: str, hotel_slug: str, checkin_date: str) -> ParseResult:
+        """Одна попытка скрейпинга через Camoufox."""
         from camoufox.async_api import AsyncCamoufox
 
         proxy_raw = self.proxy_url
