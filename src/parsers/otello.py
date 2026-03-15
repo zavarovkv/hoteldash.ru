@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from playwright.async_api import Page, Response
 
@@ -30,11 +29,15 @@ class OtelloParser(BaseParser):
                 if response.status != 200 or "json" not in content_type:
                     return
 
+                # Ловим только API offers (otello.api.2gis.com)
+                if "/offers?" not in response.url:
+                    return
+
                 body = await response.json()
-                prices = self._extract_prices_from_api(body)
+                prices = self._extract_room_prices(body)
                 if prices:
                     logger.info(
-                        "[%s] API %s → %d цен",
+                        "[%s] API %s → %d цен номеров",
                         self.source_name, response.url[:80], len(prices),
                     )
                     captured_prices.extend(prices)
@@ -75,55 +78,32 @@ class OtelloParser(BaseParser):
         logger.info("[%s] API цен нет, пробуем DOM", self.source_name)
         return await self._extract_price(page)
 
-    def _extract_prices_from_api(self, data, depth: int = 0) -> list[int]:
-        """Рекурсивно ищет цены в JSON-ответе API."""
+    def _extract_room_prices(self, data) -> list[int]:
+        """Извлекает цены из rooms[].rate_plans[].total.price API Otello."""
         prices = []
-        if depth > 10 or len(prices) > 200:
+        if not isinstance(data, dict):
             return prices
 
-        if isinstance(data, dict):
-            for key, value in data.items():
-                key_lower = key.lower()
-                if key_lower in (
-                    "price", "total_price", "min_price", "amount",
-                    "sell_price", "total", "rate", "cost",
-                ):
-                    p = self._parse_price_value(value)
-                    if p is not None:
-                        prices.append(p)
+        rooms = data.get("result", {}).get("rooms", [])
+        if not isinstance(rooms, list):
+            return prices
 
-            for value in data.values():
-                if isinstance(value, (dict, list)):
-                    prices.extend(self._extract_prices_from_api(value, depth + 1))
-
-        elif isinstance(data, list):
-            for item in data:
-                if isinstance(item, (dict, list)):
-                    prices.extend(self._extract_prices_from_api(item, depth + 1))
+        for room in rooms:
+            if not isinstance(room, dict):
+                continue
+            rate_plans = room.get("rate_plans", [])
+            if not isinstance(rate_plans, list):
+                continue
+            for plan in rate_plans:
+                if not isinstance(plan, dict):
+                    continue
+                total = plan.get("total")
+                if isinstance(total, dict):
+                    price_val = total.get("price")
+                    if isinstance(price_val, (int, float)) and 1000 <= price_val <= 1_000_000:
+                        prices.append(int(price_val))
 
         return prices
-
-    @staticmethod
-    def _parse_price_value(val) -> Optional[int]:
-        """Конвертирует значение цены в целое число."""
-        if val is None:
-            return None
-        try:
-            price = int(float(val))
-            if 500 <= price <= 1_000_000:
-                return price
-        except (ValueError, TypeError, OverflowError):
-            pass
-        if isinstance(val, str):
-            cleaned = re.sub(r"[^\d]", "", val)
-            if cleaned:
-                try:
-                    price = int(cleaned)
-                    if 500 <= price <= 1_000_000:
-                        return price
-                except (ValueError, OverflowError):
-                    pass
-        return None
 
     async def _extract_price(self, page: Page) -> ParseResult:
         """Извлекает минимальную цену из DOM."""
