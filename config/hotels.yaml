@@ -29,6 +29,8 @@ hotels:
         url_template: "https://ru-ibe.tlintegration.ru/booking2/hotel/index.gc.html?providerId=17489&arrivalDate={checkin}&departureDate={checkout}&adults={adults}&language=ru"
         has_dates: true
         widget: travelline
+      yandex_travel:
+        url_template: "https://travel.yandex.ru/hotels/moscow/radisson-collection-hotel-moscow/?adults={adults}&checkinDate={checkin}&checkoutDate={checkout}&roomCount=1"
       otello:
         url_template: "https://otello.ru/hotel/4504127908393745?checkin={checkin}&checkout={checkout}&guest_groups=%5B%7B%22adults%22%3A{adults}%7D%5D"
 

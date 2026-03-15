@@ -15,6 +15,7 @@ from src.parsers.ostrovok import OstrovokParser
 from src.parsers.hotel_site import HotelSiteParser
 from src.parsers.ozon_travel import OzonTravelParser
 from src.parsers.otello import OtelloParser
+from src.parsers.yandex_travel import YandexTravelParser
 from src.utils.browser import create_browser, create_context
 from src.utils.antibot import delay_between_pages, delay_between_hotels, shuffle_items
 from src.utils.notifications import notify_scrape_complete, notify_error
@@ -32,6 +33,7 @@ PARSERS = {
     "hotel_site": HotelSiteParser,
     "ozon_travel": OzonTravelParser,
     "otello": OtelloParser,
+    "yandex_travel": YandexTravelParser,
 }
 
 
