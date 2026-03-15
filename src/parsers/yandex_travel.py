@@ -103,6 +103,14 @@ class YandexTravelParser(BaseParser):
         """Загружает страницу и извлекает цену."""
         logger.info("[%s] %s | checkin=%s", self.source_name, hotel_slug, checkin_date)
 
+        # Блокируем тяжёлые ресурсы для экономии трафика прокси
+        async def block_heavy(route):
+            await route.abort()
+
+        await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,mp4,webm}", block_heavy)
+        await page.route("**/{analytics,tracking,metrics,mc.yandex,google-analytics,gtm}*", block_heavy)
+        await page.route("**/static/css/**", block_heavy)
+
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception as e:
