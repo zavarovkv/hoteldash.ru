@@ -77,49 +77,53 @@ class OzonTravelParser(BaseParser):
         return await self._extract_price_from_dom(page, hotel_slug, checkin_date)
 
     async def _extract_price_from_dom(self, page: Page, hotel_slug: str, checkin_date: str) -> ParseResult:
-        """Извлекает цену из DOM — ищем 'от XX XXX ₽' или цены номеров."""
-        js = """() => {
+        """Извлекает цену 'от XX XXX ₽' из DOM, ждёт стабилизации значения."""
+        js_get_from_price = """() => {
             const ruble = String.fromCharCode(0x20BD);
-            const results = [];
             const walker = document.createTreeWalker(
                 document.body, NodeFilter.SHOW_TEXT, null, false
             );
             while (walker.nextNode()) {
                 const text = walker.currentNode.textContent.trim();
-                if (!text || !text.includes(ruble) || !/[0-9]/.test(text) || text.length > 60) continue;
-                // Только цены номеров: "от XX XXX ₽" или "XX XXX ₽" (без мелких сумм типа миль/кэшбэка)
-                // Отсеиваем тексты с "миль", "балл", "кешбэк", "cashback"
-                const lower = text.toLowerCase();
-                if (lower.includes("миль") || lower.includes("балл") || lower.includes("кеш") || lower.includes("cash")) continue;
-                results.push(text);
+                if (text && text.startsWith("от") && text.includes(ruble) && /[0-9]/.test(text)) {
+                    return text;
+                }
             }
-            return results.slice(0, 30);
+            return null;
         }"""
-        try:
-            price_texts = await page.evaluate(js)
-        except Exception as e:
-            logger.warning("[%s] Не удалось извлечь цены из DOM: %s", self.source_name, e)
-            return ParseResult(price=None, raw_text=None, error="DOM extraction failed")
 
-        prices = []
-        for text in price_texts:
-            cleaned = re.sub(r"[^\d]", "", text)
+        # Поллим DOM — ждём появления и стабилизации "от XX XXX ₽"
+        last_price_text = None
+        stable_count = 0
+        for _ in range(30):  # макс 15 секунд
+            try:
+                price_text = await page.evaluate(js_get_from_price)
+            except Exception:
+                price_text = None
+
+            if price_text and price_text == last_price_text:
+                stable_count += 1
+                if stable_count >= 3:  # 3 одинаковых чтения подряд = стабильно
+                    break
+            else:
+                stable_count = 0
+                last_price_text = price_text
+
+            await page.wait_for_timeout(500)
+
+        if last_price_text:
+            cleaned = re.sub(r"[^\d]", "", last_price_text)
             if cleaned:
                 try:
                     price = int(cleaned)
-                    if 10000 <= price <= 1_000_000:
-                        prices.append(price)
+                    if 5000 <= price <= 1_000_000:
+                        logger.info(
+                            "[%s] %s | %s | цена (DOM): %d руб.",
+                            self.source_name, hotel_slug, checkin_date, price,
+                        )
+                        return ParseResult(price=price, raw_text=last_price_text, error=None)
                 except (ValueError, OverflowError):
                     pass
-
-        if prices:
-            min_price = min(prices)
-            logger.info(
-                "[%s] %s | %s | мін. цена (DOM): %d руб. (из %d)",
-                self.source_name, hotel_slug, checkin_date,
-                min_price, len(prices),
-            )
-            return ParseResult(price=min_price, raw_text=f"{min_price} ₽", error=None)
 
         return ParseResult(price=None, raw_text=None, error="no prices in DOM")
 
