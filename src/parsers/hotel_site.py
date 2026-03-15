@@ -20,7 +20,7 @@ class HotelSiteParser(BaseParser):
         self.widget = widget  # 'travelline', 'bnovo', etc.
 
     async def _extract_price(self, page: Page) -> ParseResult:
-        """Извлекает цену со страницы TravelLine booking engine."""
+        """Извлекает минимальную цену со страницы TravelLine booking engine."""
         # Ждём загрузку TravelLine React SPA
         try:
             await page.wait_for_load_state("networkidle", timeout=30000)
@@ -39,6 +39,9 @@ class HotelSiteParser(BaseParser):
         # Ждём загрузку результатов
         await page.wait_for_timeout(10000)
 
+        # Собираем ВСЕ цены со страницы и берём минимальную
+        all_prices: list[tuple[int, str]] = []  # (price, raw_text)
+
         # Ищем цены через locator (пронизывает Shadow DOM)
         price_locators = [
             page.locator("[class*='price']"),
@@ -50,71 +53,79 @@ class HotelSiteParser(BaseParser):
         for loc in price_locators:
             try:
                 count = await loc.count()
-                for i in range(min(count, 20)):
+                for i in range(min(count, 30)):
                     try:
                         text = await loc.nth(i).inner_text(timeout=2000)
                         text = text.strip()
                         if not text:
                             continue
-                        # Ищем конкретно цену с ₽ в тексте
-                        rub_match = re.search(r'([\d\s\u2009]+)\s*₽', text)
-                        if rub_match:
-                            price_str = rub_match.group(1) + '₽'
-                            price = self.parse_price_text(price_str)
-                            if price is not None:
-                                return ParseResult(price=price, raw_text=price_str.strip(), error=None)
-                        # Fallback: весь текст
-                        price = self.parse_price_text(text)
-                        if price is not None:
-                            return ParseResult(price=price, raw_text=text[:100], error=None)
+                        # Извлекаем все цены с ₽ из текста
+                        for m in re.finditer(r'([\d\s\u2009]+)\s*₽', text):
+                            price = self.parse_price_text(m.group(1) + '₽')
+                            if price is not None and price >= 5000:
+                                all_prices.append((price, m.group(0).strip()))
                     except Exception:
                         continue
             except Exception:
                 continue
 
         # Fallback: ищем ₽ по тексту через locator
-        try:
-            rub_elements = page.locator(":text('₽')")
-            count = await rub_elements.count()
-            logger.info("[%s] Элементов с ₽: %d", self.source_name, count)
-            for i in range(min(count, 10)):
-                try:
-                    text = await rub_elements.nth(i).inner_text(timeout=2000)
-                    price = self.parse_price_text(text)
-                    if price is not None:
-                        return ParseResult(price=price, raw_text=text.strip(), error=None)
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        if not all_prices:
+            try:
+                rub_elements = page.locator(":text('₽')")
+                count = await rub_elements.count()
+                logger.info("[%s] Элементов с ₽: %d", self.source_name, count)
+                for i in range(min(count, 20)):
+                    try:
+                        text = await rub_elements.nth(i).inner_text(timeout=2000)
+                        for m in re.finditer(r'([\d\s\u2009]+)\s*₽', text):
+                            price = self.parse_price_text(m.group(1) + '₽')
+                            if price is not None and price >= 5000:
+                                all_prices.append((price, m.group(0).strip()))
+                    except Exception:
+                        continue
+            except Exception:
+                pass
 
         # Ещё fallback: ищем через JS рекурсивно по Shadow DOM
-        try:
-            price_text = await page.evaluate("""() => {
-                function findPriceInShadow(root) {
-                    if (!root) return null;
-                    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-                    while (walker.nextNode()) {
-                        var text = walker.currentNode.textContent;
-                        if (text && text.match(/\\d[\\d\\s]*₽/)) return text.trim();
-                    }
-                    var children = root.querySelectorAll('*');
-                    for (var child of children) {
-                        if (child.shadowRoot) {
-                            var result = findPriceInShadow(child.shadowRoot);
-                            if (result) return result;
+        if not all_prices:
+            try:
+                price_texts = await page.evaluate("""() => {
+                    var results = [];
+                    function findPricesInShadow(root) {
+                        if (!root) return;
+                        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                        while (walker.nextNode()) {
+                            var text = walker.currentNode.textContent.trim();
+                            if (text && text.match(/\\d[\\d\\s]*₽/) && text.length < 50) {
+                                results.push(text);
+                            }
+                        }
+                        var children = root.querySelectorAll('*');
+                        for (var child of children) {
+                            if (child.shadowRoot) {
+                                findPricesInShadow(child.shadowRoot);
+                            }
                         }
                     }
-                    return null;
-                }
-                return findPriceInShadow(document) || findPriceInShadow(document.body);
-            }""")
-            if price_text:
-                logger.info("[%s] Найдена цена в Shadow DOM: %s", self.source_name, price_text[:100])
-                price = self.parse_price_text(price_text)
-                if price is not None:
-                    return ParseResult(price=price, raw_text=price_text, error=None)
-        except Exception:
-            pass
+                    findPricesInShadow(document);
+                    findPricesInShadow(document.body);
+                    return results;
+                }""")
+                for text in (price_texts or []):
+                    for m in re.finditer(r'([\d\s\u2009]+)\s*₽', text):
+                        price = self.parse_price_text(m.group(1) + '₽')
+                        if price is not None and price >= 5000:
+                            all_prices.append((price, m.group(0).strip()))
+            except Exception:
+                pass
+
+        if all_prices:
+            min_price, raw_text = min(all_prices, key=lambda x: x[0])
+            logger.info(
+                "[%s] Мин. цена: %d руб. (из %d найденных)",
+                self.source_name, min_price, len(all_prices),
+            )
+            return ParseResult(price=min_price, raw_text=raw_text, error=None)
 
         return ParseResult(price=None, raw_text=None, error="price element not found")

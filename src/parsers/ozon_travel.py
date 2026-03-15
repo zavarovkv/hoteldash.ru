@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _API_WAIT_MAX_MS = 30_000
 _API_POLL_INTERVAL_MS = 500
-_MAX_RETRIES = 5
+_MAX_RETRIES = 3
 _RETRY_DELAY_SEC = 95
 
 
@@ -38,9 +38,10 @@ class OzonTravelParser(BaseParser):
         async def block_heavy(route):
             await route.abort()
 
-        await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,mp4,webm}", block_heavy)
-        await page.route("**/{analytics,tracking,metrics,mc.yandex,google-analytics,gtm}*", block_heavy)
+        await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,otf,mp4,webm,avi,flv,ogg}", block_heavy)
+        await page.route("**/{analytics,tracking,metrics,mc.yandex,google-analytics,gtm,hotjar,sentry,datadog}*", block_heavy)
         await page.route("**/static/css/**", block_heavy)
+        await page.route("**/{video,preview,poster,thumbnail}*", block_heavy)
 
         logger.info(
             "[%s] %s | checkin=%s",
@@ -68,10 +69,10 @@ class OzonTravelParser(BaseParser):
         # Скролл для загрузки тарифов
         for _ in range(3):
             await page.evaluate("window.scrollBy(0, 500)")
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
 
         # Ждём рендеринг цен
-        await page.wait_for_timeout(5000)
+        await page.wait_for_timeout(3000)
 
         # Извлекаем цену из DOM — ищем первый элемент с ₽
         return await self._extract_price_from_dom(page, hotel_slug, checkin_date)

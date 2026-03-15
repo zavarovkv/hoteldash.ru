@@ -107,9 +107,10 @@ class YandexTravelParser(BaseParser):
         async def block_heavy(route):
             await route.abort()
 
-        await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,mp4,webm}", block_heavy)
-        await page.route("**/{analytics,tracking,metrics,mc.yandex,google-analytics,gtm}*", block_heavy)
+        await page.route("**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot,otf,mp4,webm,avi,flv,ogg}", block_heavy)
+        await page.route("**/{analytics,tracking,metrics,mc.yandex,google-analytics,gtm,hotjar,sentry,datadog}*", block_heavy)
         await page.route("**/static/css/**", block_heavy)
+        await page.route("**/{video,preview,poster,thumbnail}*", block_heavy)
 
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
