@@ -77,7 +77,7 @@ class OzonTravelParser(BaseParser):
         return await self._extract_price_from_dom(page, hotel_slug, checkin_date)
 
     async def _extract_price_from_dom(self, page: Page, hotel_slug: str, checkin_date: str) -> ParseResult:
-        """Извлекает минимальную цену из DOM (текст с ₽)."""
+        """Извлекает цену из DOM — ищем 'от XX XXX ₽' или цены номеров."""
         js = """() => {
             const ruble = String.fromCharCode(0x20BD);
             const results = [];
@@ -86,9 +86,12 @@ class OzonTravelParser(BaseParser):
             );
             while (walker.nextNode()) {
                 const text = walker.currentNode.textContent.trim();
-                if (text && text.includes(ruble) && /[0-9]/.test(text) && text.length < 60) {
-                    results.push(text);
-                }
+                if (!text || !text.includes(ruble) || !/[0-9]/.test(text) || text.length > 60) continue;
+                // Только цены номеров: "от XX XXX ₽" или "XX XXX ₽" (без мелких сумм типа миль/кэшбэка)
+                // Отсеиваем тексты с "миль", "балл", "кешбэк", "cashback"
+                const lower = text.toLowerCase();
+                if (lower.includes("миль") || lower.includes("балл") || lower.includes("кеш") || lower.includes("cash")) continue;
+                results.push(text);
             }
             return results.slice(0, 30);
         }"""
@@ -104,7 +107,7 @@ class OzonTravelParser(BaseParser):
             if cleaned:
                 try:
                     price = int(cleaned)
-                    if 5000 <= price <= 1_000_000:
+                    if 10000 <= price <= 1_000_000:
                         prices.append(price)
                 except (ValueError, OverflowError):
                     pass
