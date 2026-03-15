@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Системные зависимости для Playwright Chromium + Xvfb для headed mode
